@@ -1,17 +1,36 @@
 import os
 import time
+import argparse
 from random import randint, seed
 from nanovllm import LLM, SamplingParams
 # from vllm import LLM, SamplingParams
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Original Nano-vLLM throughput smoke benchmark.")
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("NANOVLLM_MODEL", "~/huggingface/Qwen3-0.6B/"),
+        help="Local model directory. Can also be set with NANOVLLM_MODEL.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     seed(0)
     num_seqs = 256
     max_input_len = 1024
     max_ouput_len = 1024
 
-    path = os.path.expanduser("~/huggingface/Qwen3-0.6B/")
+    path = os.path.expanduser(args.model)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(
+            f"Model directory not found: {path}\n"
+            "Download it first, for example:\n"
+            "huggingface-cli download --resume-download Qwen/Qwen3-0.6B "
+            "--local-dir ~/huggingface/Qwen3-0.6B/ --local-dir-use-symlinks False"
+        )
     llm = LLM(path, enforce_eager=False, max_model_len=4096)
 
     prompt_token_ids = [[randint(0, 10000) for _ in range(randint(100, max_input_len))] for _ in range(num_seqs)]
