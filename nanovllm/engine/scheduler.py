@@ -15,12 +15,27 @@ class Scheduler:
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
+        self.num_prefill_steps = 0
+        self.num_decode_steps = 0
+        self.num_preemptions = 0
+        self.num_chunked_prefill_steps = 0
+        self.total_prefill_tokens = 0
+        self.total_decode_tokens = 0
+        self.max_prefill_batch_tokens = 0
+        self.max_decode_batch_size = 0
+        self.peak_waiting = 0
+        self.peak_running = 0
 
     def is_finished(self):
         return not self.waiting and not self.running
 
     def add(self, seq: Sequence):
         self.waiting.append(seq)
+        self._update_queue_peaks()
+
+    def _update_queue_peaks(self):
+        self.peak_waiting = max(self.peak_waiting, len(self.waiting))
+        self.peak_running = max(self.peak_running, len(self.running))
 
     def schedule(self) -> tuple[list[Sequence], bool]:
         scheduled_seqs = []
@@ -52,6 +67,12 @@ class Scheduler:
             scheduled_seqs.append(seq)
 
         if scheduled_seqs:
+            chunked = any(seq.num_cached_tokens + seq.num_scheduled_tokens < seq.num_tokens for seq in scheduled_seqs)
+            self.num_prefill_steps += 1
+            self.num_chunked_prefill_steps += int(chunked)
+            self.total_prefill_tokens += num_batched_tokens
+            self.max_prefill_batch_tokens = max(self.max_prefill_batch_tokens, num_batched_tokens)
+            self._update_queue_peaks()
             return scheduled_seqs, True
 
         # decode
@@ -70,13 +91,19 @@ class Scheduler:
                 scheduled_seqs.append(seq)
         assert scheduled_seqs
         self.running.extendleft(reversed(scheduled_seqs))
+        self.num_decode_steps += 1
+        self.total_decode_tokens += len(scheduled_seqs)
+        self.max_decode_batch_size = max(self.max_decode_batch_size, len(scheduled_seqs))
+        self._update_queue_peaks()
         return scheduled_seqs, False
 
     def preempt(self, seq: Sequence):
+        self.num_preemptions += 1
         seq.status = SequenceStatus.WAITING
         seq.is_prefill = True
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)
+        self._update_queue_peaks()
 
     def postprocess(self, seqs: list[Sequence], token_ids: list[int], is_prefill: bool):
         for seq, token_id in zip(seqs, token_ids):
@@ -90,3 +117,25 @@ class Scheduler:
                 seq.status = SequenceStatus.FINISHED
                 self.block_manager.deallocate(seq)
                 self.running.remove(seq)
+        self._update_queue_peaks()
+
+    def metrics(self) -> dict[str, int | float]:
+        # Derived averages are computed on demand to keep scheduling lightweight.
+        avg_prefill_tokens = self.total_prefill_tokens / self.num_prefill_steps if self.num_prefill_steps else 0.0
+        avg_decode_batch = self.total_decode_tokens / self.num_decode_steps if self.num_decode_steps else 0.0
+        return {
+            "waiting": len(self.waiting),
+            "running": len(self.running),
+            "peak_waiting": self.peak_waiting,
+            "peak_running": self.peak_running,
+            "num_prefill_steps": self.num_prefill_steps,
+            "num_decode_steps": self.num_decode_steps,
+            "num_chunked_prefill_steps": self.num_chunked_prefill_steps,
+            "num_preemptions": self.num_preemptions,
+            "total_prefill_tokens": self.total_prefill_tokens,
+            "total_decode_tokens": self.total_decode_tokens,
+            "max_prefill_batch_tokens": self.max_prefill_batch_tokens,
+            "max_decode_batch_size": self.max_decode_batch_size,
+            "avg_prefill_tokens_per_step": round(avg_prefill_tokens, 2),
+            "avg_decode_batch_size": round(avg_decode_batch, 2),
+        }

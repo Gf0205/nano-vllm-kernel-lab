@@ -49,6 +49,22 @@ This benchmark first warms one shared-prefix request so `BlockManager` can hash
 full prefix blocks. It then compares later requests with the same prefix against
 synthetic requests with unique prefixes.
 
+## Scheduler / Chunked Prefill Metrics
+
+```bash
+python benchmarks/bench_scheduler_metrics.py \
+  --model ~/huggingface/Qwen3-0.6B/ \
+  --num-seqs 16 \
+  --input-len 2048 \
+  --output-len 64 \
+  --normal-budget 16384 \
+  --chunked-budget 512
+```
+
+This benchmark runs the same prompts twice and only changes
+`max_num_batched_tokens`. The smaller budget should force chunked prefill and
+make `num_chunked_prefill_steps` visible in the scheduler metrics.
+
 ## Output
 
 Both scripts write:
