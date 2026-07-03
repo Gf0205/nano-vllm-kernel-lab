@@ -34,6 +34,21 @@ python benchmarks/bench_latency.py \
 The latency script uses the current `LLMEngine.step()` loop directly so it can
 observe when each sequence receives its first generated token.
 
+## Prefix Cache Baseline
+
+```bash
+python benchmarks/bench_prefix_cache.py \
+  --model ~/huggingface/Qwen3-0.6B/ \
+  --num-seqs 32 \
+  --prefix-len 1024 \
+  --suffix-len 32 \
+  --output-len 64
+```
+
+This benchmark first warms one shared-prefix request so `BlockManager` can hash
+full prefix blocks. It then compares later requests with the same prefix against
+synthetic requests with unique prefixes.
+
 ## Output
 
 Both scripts write:
