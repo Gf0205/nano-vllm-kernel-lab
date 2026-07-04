@@ -143,3 +143,26 @@ the primary metric for chunked-prefill benefit.
 The benchmark has been updated to report post-injection output throughput so the
 next run can focus on the true interference window rather than the initial
 active-prefill bootstrap.
+
+## Timeline verification
+
+The chunked timeline showed consecutive prefill chunks before decode resumed:
+
+```text
+prefill 512
+prefill 512
+prefill 512
+prefill 512
+prefill 512
+prefill 512
+decode ...
+```
+
+So, in this scheduler/workload, chunked prefill performs compute chunking but
+does not provide decode-aware interleaving between chunks. This explains why the
+largest single prefill step gets much smaller while total post-injection window
+time and active decode max gap remain nearly unchanged.
+
+The benchmark now emits `post_injection_phase_runs` and
+`prefill_decode_interleaved_after_injection` to make this behavior explicit in
+future runs.

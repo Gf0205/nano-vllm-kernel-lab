@@ -41,6 +41,8 @@ needs attribution.
 - `decode_cuda_graph_steps`
 - `decode_eager_steps`
 - bounded `post_injection_timeline`
+- `post_injection_phase_runs`
+- `prefill_decode_interleaved_after_injection`
 
 Each timeline row records:
 

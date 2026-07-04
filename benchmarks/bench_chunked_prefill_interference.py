@@ -140,6 +140,31 @@ def run_instrumented_step(llm: LLM) -> dict:
     }
 
 
+def summarize_phase_runs(timeline: list[dict]) -> list[dict]:
+    runs = []
+    for row in timeline:
+        phase = row["phase"]
+        if not runs or runs[-1]["phase"] != phase:
+            runs.append(
+                {
+                    "phase": phase,
+                    "steps": 1,
+                    "prefill_tokens": row["prefill_tokens"],
+                    "decode_steps": int(phase == "decode"),
+                }
+            )
+        else:
+            runs[-1]["steps"] += 1
+            runs[-1]["prefill_tokens"] += row["prefill_tokens"]
+            runs[-1]["decode_steps"] += int(phase == "decode")
+    return runs
+
+
+def has_prefill_decode_interleaving(phase_runs: list[dict]) -> bool:
+    phases = [run["phase"] for run in phase_runs]
+    return "prefill" in phases and "decode" in phases and phases.count("prefill") > 1
+
+
 def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) -> dict:
     model = os.path.expanduser(args.model)
     llm = LLM(
@@ -295,6 +320,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
         long_output_tokens = long_seq.num_completion_tokens if long_seq is not None else 0
         post_injection_active_output_tokens = max(0, active_output_tokens - active_tokens_at_injection)
         post_injection_output_tokens = post_injection_active_output_tokens + long_output_tokens
+        post_injection_phase_runs = summarize_phase_runs(post_injection_timeline)
         scheduler_metrics = llm.scheduler.metrics()
         return {
             "case": case,
@@ -344,6 +370,8 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "decode_cuda_graph_steps": decode_cuda_graph_steps,
             "decode_eager_steps": decode_eager_steps,
             "post_injection_timeline": post_injection_timeline,
+            "post_injection_phase_runs": post_injection_phase_runs,
+            "prefill_decode_interleaved_after_injection": has_prefill_decode_interleaving(post_injection_phase_runs),
             "long_request_ttft_s": round(long_ttft_s, 6),
             "post_inject_prefill_step_s_max": round(max(prefill_step_durations_after_inject), 6)
             if prefill_step_durations_after_inject
