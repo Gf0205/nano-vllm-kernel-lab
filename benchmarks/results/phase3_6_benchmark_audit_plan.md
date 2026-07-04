@@ -38,6 +38,7 @@ python benchmarks/bench_benchmark_audit.py \
   --output-lens 128 \
   --orders natural,reverse,shuffle \
   --repeats 2 \
+  --no-write \
   --output-prefix benchmark_audit_3090
 ```
 
@@ -52,6 +53,7 @@ python benchmarks/bench_benchmark_audit.py \
   --orders natural,reverse,shuffle \
   --repeats 2 \
   --enforce-eager \
+  --no-write \
   --output-prefix benchmark_audit_3090_eager
 ```
 

@@ -75,13 +75,16 @@ python benchmarks/bench_benchmark_audit.py \
   --output-lens 128 \
   --orders natural,reverse,shuffle \
   --repeats 2 \
+  --no-write \
   --output-prefix benchmark_audit_3090
 ```
 
 Run this before making performance claims from the smoke benchmark. It times
 `llm.generate` only, synchronizes CUDA before and after each measured case,
 checks generated token counts, and changes case order to expose warmup or
-ordering artifacts.
+ordering artifacts. Use `--no-write` on AutoDL when you only want to paste the
+console output back into the local development thread; omit it when you want
+jsonl/md artifacts.
 
 ## Output
 

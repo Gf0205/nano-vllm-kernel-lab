@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-tokens", type=int, default=8)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--output-prefix", default="benchmark_audit_smoke")
+    parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     return parser.parse_args()
 
 
@@ -89,18 +90,17 @@ def main() -> None:
     init_time_s = perf_counter() - init_start
     vocab_size = llm.tokenizer.vocab_size
 
-    append_jsonl(
-        jsonl_path,
-        {
-            "type": "env",
-            "env": collect_env(),
-            "metric_notes": {
-                "timed_region": "llm.generate only; LLM initialization and CUDA Graph capture are excluded",
-                "throughput": "output tokens per wall-clock second for completed generated tokens",
-                "sync": "torch.cuda.synchronize is called before and after each timed generation",
-            },
+    env_record = {
+        "type": "env",
+        "env": collect_env(),
+        "metric_notes": {
+            "timed_region": "llm.generate only; LLM initialization and CUDA Graph capture are excluded",
+            "throughput": "output tokens per wall-clock second for completed generated tokens",
+            "sync": "torch.cuda.synchronize is called before and after each timed generation",
         },
-    )
+    }
+    if not args.no_write:
+        append_jsonl(jsonl_path, env_record)
 
     try:
         if args.warmup_tokens > 0:
@@ -142,33 +142,35 @@ def main() -> None:
                         "llm_init_time_s": round(init_time_s, 4),
                     }
                     rows.append(row)
-                    append_jsonl(jsonl_path, {"type": "benchmark_audit", **row})
+                    if not args.no_write:
+                        append_jsonl(jsonl_path, {"type": "benchmark_audit", **row})
                     print(row)
     finally:
         llm.exit()
 
-    write_markdown_table(
-        md_path,
-        rows,
-        [
-            "order",
-            "repeat",
-            "sequence_index",
-            "case_id",
-            "enforce_eager",
-            "batch_size",
-            "input_len",
-            "output_len",
-            "total_output_tokens",
-            "expected_output_tokens",
-            "output_complete",
-            "wall_time_s",
-            "output_tokens_per_s",
-            "peak_memory_gb",
-        ],
-    )
-    print(f"Wrote {jsonl_path}")
-    print(f"Wrote {md_path}")
+    if not args.no_write:
+        write_markdown_table(
+            md_path,
+            rows,
+            [
+                "order",
+                "repeat",
+                "sequence_index",
+                "case_id",
+                "enforce_eager",
+                "batch_size",
+                "input_len",
+                "output_len",
+                "total_output_tokens",
+                "expected_output_tokens",
+                "output_complete",
+                "wall_time_s",
+                "output_tokens_per_s",
+                "peak_memory_gb",
+            ],
+        )
+        print(f"Wrote {jsonl_path}")
+        print(f"Wrote {md_path}")
 
 
 if __name__ == "__main__":
