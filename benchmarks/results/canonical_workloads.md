@@ -63,6 +63,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --inject-after-decode-steps 8 \
   --normal-budget 8192 \
   --chunked-budget 512 \
+  --long-decode-reserve-blocks 1 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
@@ -78,7 +79,10 @@ Primary metrics:
 Note: keep `long_input_len + long_output_len` within the model's effective
 context length. For the current Qwen3-0.6B setup, `3072 + 32` is a safer
 long-context stress case than `4096 + 32`, which can exceed the effective
-context limit after configuration clipping.
+context limit after configuration clipping. The benchmark also records
+`effective_long_input_len`; if available KV blocks are insufficient while active
+decode requests are running, it trims the injected prompt instead of crashing
+the scheduler on an allocation-capacity edge case.
 
 ## Roadmap after these workloads
 

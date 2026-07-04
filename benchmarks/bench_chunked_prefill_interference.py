@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--inject-after-decode-steps", type=int, default=8)
     parser.add_argument("--normal-budget", type=int, default=8192)
     parser.add_argument("--chunked-budget", type=int, default=512)
+    parser.add_argument("--long-decode-reserve-blocks", type=int, default=1)
     parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--max-num-seqs", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.6)
@@ -56,6 +57,8 @@ def parse_args() -> argparse.Namespace:
 def validate_lengths(args: argparse.Namespace, model: str) -> int:
     hf_config = AutoConfig.from_pretrained(model)
     effective_max_model_len = min(args.max_model_len, hf_config.max_position_embeddings)
+    if args.long_decode_reserve_blocks < 0:
+        raise ValueError("--long-decode-reserve-blocks must be non-negative")
     active_total_len = args.active_input_len + args.active_output_len
     long_total_len = args.long_input_len + args.long_output_len
     if active_total_len > effective_max_model_len:
@@ -75,6 +78,26 @@ def validate_lengths(args: argparse.Namespace, model: str) -> int:
 def add_tracked_request(llm: LLM, prompt: list[int], sampling: SamplingParams):
     llm.add_request(prompt, sampling)
     return llm.scheduler.waiting[-1]
+
+
+def fit_prompt_to_free_blocks(llm: LLM, prompt: list[int], reserve_blocks: int) -> tuple[list[int], bool]:
+    block_manager = llm.scheduler.block_manager
+    free_blocks = len(block_manager.free_block_ids)
+    usable_blocks = free_blocks - reserve_blocks
+    if usable_blocks <= 0:
+        raise RuntimeError(
+            "No KV blocks left for the injected long prompt. "
+            "Reduce --active-decode-seqs or --long-decode-reserve-blocks."
+        )
+    # BlockManager currently allocates all prompt blocks up front even when the
+    # prefill compute is chunked, so this benchmark trims only when capacity
+    # would otherwise make the scheduler hit its empty-schedule assertion.
+    max_prompt_tokens = usable_blocks * block_manager.block_size - 1
+    if len(prompt) <= max_prompt_tokens:
+        return prompt, False
+    if max_prompt_tokens <= 0:
+        raise RuntimeError("Injected prompt cannot fit into the remaining KV block capacity.")
+    return prompt[:max_prompt_tokens], True
 
 
 def run_step(llm: LLM) -> tuple[float, bool]:
@@ -118,6 +141,8 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     active_decode_step_durations = []
     prefill_step_durations_after_inject = []
     injected = False
+    effective_long_input_len = len(long_prompt)
+    long_prompt_shrunk = False
 
     start = perf_counter()
     try:
@@ -146,7 +171,13 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
                 and active_decode_steps_before_inject >= args.inject_after_decode_steps
                 and all(not seq.is_finished for seq in active_seqs)
             ):
-                long_seq = add_tracked_request(llm, long_prompt, long_sampling)
+                fitted_long_prompt, long_prompt_shrunk = fit_prompt_to_free_blocks(
+                    llm,
+                    long_prompt,
+                    args.long_decode_reserve_blocks,
+                )
+                effective_long_input_len = len(fitted_long_prompt)
+                long_seq = add_tracked_request(llm, fitted_long_prompt, long_sampling)
                 long_injected_at = perf_counter()
                 injected = True
 
@@ -165,8 +196,11 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "active_decode_seqs": args.active_decode_seqs,
             "active_input_len": args.active_input_len,
             "active_output_len": args.active_output_len,
-            "long_input_len": args.long_input_len,
+            "requested_long_input_len": args.long_input_len,
+            "effective_long_input_len": effective_long_input_len,
+            "long_prompt_shrunk": long_prompt_shrunk,
             "long_output_len": args.long_output_len,
+            "long_decode_reserve_blocks": args.long_decode_reserve_blocks,
             "inject_after_decode_steps": args.inject_after_decode_steps,
             "wall_time_s": round(wall_time, 4),
             "active_output_tokens": active_output_tokens,
@@ -223,6 +257,9 @@ def main() -> None:
             [
                 "case",
                 "max_num_batched_tokens",
+                "requested_long_input_len",
+                "effective_long_input_len",
+                "long_prompt_shrunk",
                 "wall_time_s",
                 "output_tokens_per_s",
                 "active_decode_gap_s_avg",

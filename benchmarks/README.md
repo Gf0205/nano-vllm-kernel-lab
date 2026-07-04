@@ -79,6 +79,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --inject-after-decode-steps 8 \
   --normal-budget 8192 \
   --chunked-budget 512 \
+  --long-decode-reserve-blocks 1 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
