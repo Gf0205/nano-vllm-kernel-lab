@@ -65,6 +65,24 @@ This benchmark runs the same prompts twice and only changes
 `max_num_batched_tokens`. The smaller budget should force chunked prefill and
 make `num_chunked_prefill_steps` visible in the scheduler metrics.
 
+For the interference workload, keep active decode requests running and inject a
+long prompt:
+
+```bash
+python benchmarks/bench_chunked_prefill_interference.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --active-decode-seqs 8 \
+  --active-input-len 128 \
+  --active-output-len 128 \
+  --long-input-len 4096 \
+  --long-output-len 32 \
+  --inject-after-decode-steps 8 \
+  --normal-budget 8192 \
+  --chunked-budget 512 \
+  --no-write \
+  --output-prefix chunked_prefill_interference_3090
+```
+
 ## Benchmark Audit
 
 ```bash
