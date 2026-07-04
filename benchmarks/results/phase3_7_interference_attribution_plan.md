@@ -24,6 +24,12 @@ needs attribution.
 
 - `total_prefill_wall_time_s`
 - `total_decode_wall_time_s`
+- `pre_injection_wall_time_s`
+- `post_injection_wall_time_s`
+- `pre_injection_prefill_wall_time_s`
+- `post_injection_prefill_wall_time_s`
+- `pre_injection_decode_wall_time_s`
+- `post_injection_decode_wall_time_s`
 - `decode_step_s_avg`
 - `decode_step_s_p50`
 - `decode_step_s_p95`

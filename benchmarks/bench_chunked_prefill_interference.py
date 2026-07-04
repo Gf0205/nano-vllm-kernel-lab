@@ -179,6 +179,12 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     decode_eager_steps = 0
     total_prefill_wall_time = 0.0
     total_decode_wall_time = 0.0
+    pre_injection_wall_time = 0.0
+    post_injection_wall_time = 0.0
+    pre_injection_prefill_wall_time = 0.0
+    post_injection_prefill_wall_time = 0.0
+    pre_injection_decode_wall_time = 0.0
+    post_injection_decode_wall_time = 0.0
     post_injection_timeline = []
     injected = False
     effective_long_input_len = len(long_prompt)
@@ -192,6 +198,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     step_id = 0
     try:
         while not llm.is_finished():
+            was_injected_at_step_start = injected
             before_active_tokens = sum(seq.num_completion_tokens for seq in active_seqs)
             before_long_tokens = long_seq.num_completion_tokens if long_seq is not None else 0
 
@@ -204,14 +211,26 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             if is_prefill:
                 prefill_step_durations.append(step_duration)
                 total_prefill_wall_time += step_duration
+                if was_injected_at_step_start:
+                    post_injection_prefill_wall_time += step_duration
+                else:
+                    pre_injection_prefill_wall_time += step_duration
             else:
                 decode_step_durations.append(step_duration)
                 total_decode_wall_time += step_duration
+                if was_injected_at_step_start:
+                    post_injection_decode_wall_time += step_duration
+                else:
+                    pre_injection_decode_wall_time += step_duration
                 decode_batch_histogram[step_info["decode_batch_size"]] += 1
                 if step_info["execution_path"] == "decode_cuda_graph":
                     decode_cuda_graph_steps += 1
                 else:
                     decode_eager_steps += 1
+            if was_injected_at_step_start:
+                post_injection_wall_time += step_duration
+            else:
+                pre_injection_wall_time += step_duration
 
             after_active_tokens = sum(seq.num_completion_tokens for seq in active_seqs)
             active_progressed = after_active_tokens > before_active_tokens and not is_prefill
@@ -301,6 +320,12 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "active_decode_step_s_avg": round(mean(active_decode_step_durations), 6) if active_decode_step_durations else 0.0,
             "total_prefill_wall_time_s": round(total_prefill_wall_time, 6),
             "total_decode_wall_time_s": round(total_decode_wall_time, 6),
+            "pre_injection_wall_time_s": round(pre_injection_wall_time, 6),
+            "post_injection_wall_time_s": round(post_injection_wall_time, 6),
+            "pre_injection_prefill_wall_time_s": round(pre_injection_prefill_wall_time, 6),
+            "post_injection_prefill_wall_time_s": round(post_injection_prefill_wall_time, 6),
+            "pre_injection_decode_wall_time_s": round(pre_injection_decode_wall_time, 6),
+            "post_injection_decode_wall_time_s": round(post_injection_decode_wall_time, 6),
             "decode_step_s_avg": round(mean(decode_step_durations), 6) if decode_step_durations else 0.0,
             "decode_step_s_p50": round(percentile(decode_step_durations, 0.50), 6),
             "decode_step_s_p95": round(percentile(decode_step_durations, 0.95), 6),
