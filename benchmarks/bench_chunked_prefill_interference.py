@@ -20,6 +20,7 @@ from utils import (
 add_repo_to_path()
 
 from nanovllm import LLM, SamplingParams  # noqa: E402
+from transformers import AutoConfig  # noqa: E402
 from transformers import AutoTokenizer  # noqa: E402
 
 
@@ -37,7 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--active-decode-seqs", type=int, default=8)
     parser.add_argument("--active-input-len", type=int, default=128)
     parser.add_argument("--active-output-len", type=int, default=128)
-    parser.add_argument("--long-input-len", type=int, default=4096)
+    parser.add_argument("--long-input-len", type=int, default=3072)
     parser.add_argument("--long-output-len", type=int, default=32)
     parser.add_argument("--inject-after-decode-steps", type=int, default=8)
     parser.add_argument("--normal-budget", type=int, default=8192)
@@ -50,6 +51,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     parser.add_argument("--output-prefix", default="chunked_prefill_interference")
     return parser.parse_args()
+
+
+def validate_lengths(args: argparse.Namespace, model: str) -> int:
+    hf_config = AutoConfig.from_pretrained(model)
+    effective_max_model_len = min(args.max_model_len, hf_config.max_position_embeddings)
+    active_total_len = args.active_input_len + args.active_output_len
+    long_total_len = args.long_input_len + args.long_output_len
+    if active_total_len > effective_max_model_len:
+        raise ValueError(
+            "active_input_len + active_output_len must fit the model context: "
+            f"{active_total_len} > {effective_max_model_len}"
+        )
+    if long_total_len > effective_max_model_len:
+        raise ValueError(
+            "long_input_len + long_output_len must fit the model context: "
+            f"{long_total_len} > {effective_max_model_len}. "
+            "For Qwen3-0.6B on this project, use --long-input-len 3072 with --long-output-len 32."
+        )
+    return effective_max_model_len
 
 
 def add_tracked_request(llm: LLM, prompt: list[int], sampling: SamplingParams):
@@ -170,6 +190,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
 def main() -> None:
     args = parse_args()
     model = os.path.expanduser(args.model)
+    effective_max_model_len = validate_lengths(args, model)
     results_dir = ensure_results_dir()
     jsonl_path = results_dir / f"{args.output_prefix}.jsonl"
     md_path = results_dir / f"{args.output_prefix}.md"
@@ -181,7 +202,14 @@ def main() -> None:
     ]
 
     if not args.no_write:
-        append_jsonl(jsonl_path, {"type": "env", "env": collect_env()})
+        append_jsonl(
+            jsonl_path,
+            {
+                "type": "env",
+                "env": collect_env(),
+                "effective_max_model_len": effective_max_model_len,
+            },
+        )
 
     for row in rows:
         if not args.no_write:

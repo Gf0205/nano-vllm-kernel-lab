@@ -74,7 +74,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --active-decode-seqs 8 \
   --active-input-len 128 \
   --active-output-len 128 \
-  --long-input-len 4096 \
+  --long-input-len 3072 \
   --long-output-len 32 \
   --inject-after-decode-steps 8 \
   --normal-budget 8192 \
