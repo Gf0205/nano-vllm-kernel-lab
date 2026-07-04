@@ -30,6 +30,9 @@ needs attribution.
 - `post_injection_prefill_wall_time_s`
 - `pre_injection_decode_wall_time_s`
 - `post_injection_decode_wall_time_s`
+- `post_injection_output_tokens_per_s`
+- `active_tokens_at_injection`
+- `post_injection_active_output_tokens`
 - `decode_step_s_avg`
 - `decode_step_s_p50`
 - `decode_step_s_p95`

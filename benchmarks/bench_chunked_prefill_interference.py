@@ -193,6 +193,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     capacity_limit_reason = ""
     kv_total_blocks = 0
     kv_free_blocks_at_inject = 0
+    active_tokens_at_injection = 0
 
     start = perf_counter()
     step_id = 0
@@ -268,6 +269,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
                 block_manager = llm.scheduler.block_manager
                 kv_total_blocks = len(block_manager.blocks)
                 kv_free_blocks_at_inject = len(block_manager.free_block_ids)
+                active_tokens_at_injection = sum(seq.num_completion_tokens for seq in active_seqs)
                 try:
                     fitted_long_prompt, long_prompt_shrunk = fit_prompt_to_free_blocks(
                         llm,
@@ -291,6 +293,8 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
         wall_time = perf_counter() - start
         active_output_tokens = sum(seq.num_completion_tokens for seq in active_seqs)
         long_output_tokens = long_seq.num_completion_tokens if long_seq is not None else 0
+        post_injection_active_output_tokens = max(0, active_output_tokens - active_tokens_at_injection)
+        post_injection_output_tokens = post_injection_active_output_tokens + long_output_tokens
         scheduler_metrics = llm.scheduler.metrics()
         return {
             "case": case,
@@ -312,8 +316,14 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "kv_free_blocks_at_inject": kv_free_blocks_at_inject,
             "wall_time_s": round(wall_time, 4),
             "active_output_tokens": active_output_tokens,
+            "active_tokens_at_injection": active_tokens_at_injection,
+            "post_injection_active_output_tokens": post_injection_active_output_tokens,
             "long_output_tokens": long_output_tokens,
+            "post_injection_output_tokens": post_injection_output_tokens,
             "output_tokens_per_s": round((active_output_tokens + long_output_tokens) / wall_time, 2),
+            "post_injection_output_tokens_per_s": round(post_injection_output_tokens / post_injection_wall_time, 2)
+            if post_injection_wall_time > 0
+            else 0.0,
             "active_decode_gap_s_avg": round(mean(active_decode_gaps), 6) if active_decode_gaps else 0.0,
             "active_decode_gap_s_p95": round(percentile(active_decode_gaps, 0.95), 6),
             "active_decode_gap_s_max": round(max(active_decode_gaps), 6) if active_decode_gaps else 0.0,
