@@ -166,3 +166,29 @@ time and active decode max gap remain nearly unchanged.
 The benchmark now emits `post_injection_phase_runs` and
 `prefill_decode_interleaved_after_injection` to make this behavior explicit in
 future runs.
+
+## Final Phase 3.7 Conclusion
+
+Phase 3.7 is closed with the following conclusion:
+
+```text
+The upstream chunked-prefill policy in this workload performs compute chunking
+but does not actively interleave decode execution between consecutive prefill
+chunks.
+```
+
+It improves:
+
+- max single prefill step latency;
+- per-step prefill token budget;
+- observability of prefill chunk behavior.
+
+It does not yet improve:
+
+- active decode max gap;
+- post-injection completion time;
+- decode continuity.
+
+The design implication is that improving active decode latency requires a
+scheduler-level decode-aware interleaving policy, not only smaller prefill
+compute chunks.

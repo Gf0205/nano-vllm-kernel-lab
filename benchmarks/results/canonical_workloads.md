@@ -96,8 +96,10 @@ as a KV-capacity finding rather than a latency result.
 
 1. Finish Scheduler/Chunked Prefill interference analysis.
 2. Attribute the observed wall-time gap before claiming a causal mechanism.
-3. Treat Phase 2 as smoke only; use audited baseline for claims.
-4. Enter Phase 4 bottleneck profiling.
-5. Use profiler evidence to choose Phase 5 optimization targets.
-6. Keep advanced features like W4A16, speculative decoding, paged decode
+3. Close Phase 3.7 as chunked prefill timeline analysis.
+4. Design a minimal decode-aware scheduler policy before implementation.
+5. Treat Phase 2 as smoke only; use audited baseline for claims.
+6. Enter bottleneck profiling after scheduler policy evaluation.
+7. Use profiler evidence to choose profile-driven optimization targets.
+8. Keep advanced features like W4A16, speculative decoding, paged decode
    attention, and KV compression as optional later phases.
