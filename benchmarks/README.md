@@ -65,9 +65,27 @@ This benchmark runs the same prompts twice and only changes
 `max_num_batched_tokens`. The smaller budget should force chunked prefill and
 make `num_chunked_prefill_steps` visible in the scheduler metrics.
 
+## Benchmark Audit
+
+```bash
+python benchmarks/bench_benchmark_audit.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --batch-sizes 1,8,32 \
+  --input-lens 128,512 \
+  --output-lens 128 \
+  --orders natural,reverse,shuffle \
+  --repeats 2 \
+  --output-prefix benchmark_audit_3090
+```
+
+Run this before making performance claims from the smoke benchmark. It times
+`llm.generate` only, synchronizes CUDA before and after each measured case,
+checks generated token counts, and changes case order to expose warmup or
+ordering artifacts.
+
 ## Output
 
-Both scripts write:
+All benchmark scripts write:
 
 - `benchmarks/results/*.jsonl` for machine-readable records.
 - `benchmarks/results/*.md` for README-friendly tables.

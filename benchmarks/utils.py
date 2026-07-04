@@ -130,6 +130,8 @@ class LatencyRecord:
     ttft_s_p50: float
     ttft_s_p90: float
     tpot_s: float
+    decode_tpot_s_aggregate: float
+    decode_tokens_excluding_first: int
     output_tokens_per_s: float
     peak_memory_gb: float
 

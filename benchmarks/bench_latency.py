@@ -104,6 +104,8 @@ def main() -> None:
         ttft_s_p50=round(percentile(ttfts, 0.50), 4),
         ttft_s_p90=round(percentile(ttfts, 0.90), 4),
         tpot_s=round(tpot, 6),
+        decode_tpot_s_aggregate=round(tpot, 6),
+        decode_tokens_excluding_first=tpot_denominator,
         output_tokens_per_s=round(last_completion_total / wall_time, 2),
         peak_memory_gb=round(peak_memory_gb(), 3),
     )
