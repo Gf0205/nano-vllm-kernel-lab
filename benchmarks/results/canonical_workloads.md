@@ -63,7 +63,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --inject-after-decode-steps 8 \
   --normal-budget 8192 \
   --chunked-budget 512 \
-  --long-decode-reserve-blocks 1 \
+  --long-decode-reserve-blocks 0 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
@@ -82,7 +82,9 @@ long-context stress case than `4096 + 32`, which can exceed the effective
 context limit after configuration clipping. The benchmark also records
 `effective_long_input_len`; if available KV blocks are insufficient while active
 decode requests are running, it trims the injected prompt instead of crashing
-the scheduler on an allocation-capacity edge case.
+the scheduler on an allocation-capacity edge case. If even the trimmed prompt
+cannot fit, the row is marked `capacity_limited=True` and should be interpreted
+as a KV-capacity finding rather than a latency result.
 
 ## Roadmap after these workloads
 
