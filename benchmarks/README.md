@@ -80,9 +80,15 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --normal-budget 8192 \
   --chunked-budget 512 \
   --long-decode-reserve-blocks 0 \
+  --timeline-limit 48 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
+
+This is also the Phase 3.7 attribution entrypoint. Besides the top-level
+scheduler metrics, it reports decode batch histograms, total prefill/decode wall
+time, decode step latency, CUDA Graph decode replay counts, and a bounded
+post-injection timeline.
 
 ## Benchmark Audit
 

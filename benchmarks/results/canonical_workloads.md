@@ -64,6 +64,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --normal-budget 8192 \
   --chunked-budget 512 \
   --long-decode-reserve-blocks 0 \
+  --timeline-limit 48 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
@@ -71,6 +72,11 @@ python benchmarks/bench_chunked_prefill_interference.py \
 Primary metrics:
 
 - active decode gap average / P95 / max
+- decode batch histogram
+- total prefill/decode wall time
+- decode step average / P50 / P95 / max
+- CUDA Graph decode replay count
+- post-injection scheduler timeline
 - long request TTFT
 - number of chunked prefill steps
 - system output tok/s
@@ -89,8 +95,9 @@ as a KV-capacity finding rather than a latency result.
 ## Roadmap after these workloads
 
 1. Finish Scheduler/Chunked Prefill interference analysis.
-2. Treat Phase 2 as smoke only; use audited baseline for claims.
-3. Enter Phase 4 bottleneck profiling.
-4. Use profiler evidence to choose Phase 5 optimization targets.
-5. Keep advanced features like W4A16, speculative decoding, paged decode
+2. Attribute the observed wall-time gap before claiming a causal mechanism.
+3. Treat Phase 2 as smoke only; use audited baseline for claims.
+4. Enter Phase 4 bottleneck profiling.
+5. Use profiler evidence to choose Phase 5 optimization targets.
+6. Keep advanced features like W4A16, speculative decoding, paged decode
    attention, and KV compression as optional later phases.

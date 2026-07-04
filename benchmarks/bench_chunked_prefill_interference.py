@@ -1,6 +1,7 @@
 import argparse
 import gc
 import os
+from collections import Counter
 from pathlib import Path
 from statistics import mean
 from time import perf_counter
@@ -54,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-seqs", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--timeline-limit", type=int, default=48)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     parser.add_argument("--output-prefix", default="chunked_prefill_interference")
@@ -114,12 +116,28 @@ def fit_prompt_to_free_blocks(
     return prompt[:max_prompt_tokens], True
 
 
-def run_step(llm: LLM) -> tuple[float, bool]:
+def run_instrumented_step(llm: LLM) -> dict:
     cuda_sync()
     start = perf_counter()
-    _, num_tokens = llm.step()
+    seqs, is_prefill = llm.scheduler.schedule()
+    num_tokens = sum(seq.num_scheduled_tokens for seq in seqs) if is_prefill else -len(seqs)
+    decode_batch_size = 0 if is_prefill else len(seqs)
+    if is_prefill:
+        execution_path = "prefill_eager"
+    elif llm.model_runner.enforce_eager or decode_batch_size > 512:
+        execution_path = "decode_eager"
+    else:
+        execution_path = "decode_cuda_graph"
+    token_ids = llm.model_runner.call("run", seqs, is_prefill)
+    llm.scheduler.postprocess(seqs, token_ids, is_prefill)
     cuda_sync()
-    return perf_counter() - start, num_tokens > 0
+    return {
+        "duration_s": perf_counter() - start,
+        "is_prefill": is_prefill,
+        "prefill_tokens": num_tokens if is_prefill else 0,
+        "decode_batch_size": decode_batch_size,
+        "execution_path": execution_path,
+    }
 
 
 def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) -> dict:
@@ -154,6 +172,14 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     active_decode_gaps = []
     active_decode_step_durations = []
     prefill_step_durations_after_inject = []
+    prefill_step_durations = []
+    decode_step_durations = []
+    decode_batch_histogram = Counter()
+    decode_cuda_graph_steps = 0
+    decode_eager_steps = 0
+    total_prefill_wall_time = 0.0
+    total_decode_wall_time = 0.0
+    post_injection_timeline = []
     injected = False
     effective_long_input_len = len(long_prompt)
     long_prompt_shrunk = False
@@ -163,13 +189,29 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
     kv_free_blocks_at_inject = 0
 
     start = perf_counter()
+    step_id = 0
     try:
         while not llm.is_finished():
             before_active_tokens = sum(seq.num_completion_tokens for seq in active_seqs)
             before_long_tokens = long_seq.num_completion_tokens if long_seq is not None else 0
 
-            step_duration, is_prefill = run_step(llm)
+            step_info = run_instrumented_step(llm)
+            step_id += 1
+            step_duration = step_info["duration_s"]
+            is_prefill = step_info["is_prefill"]
             now = perf_counter()
+
+            if is_prefill:
+                prefill_step_durations.append(step_duration)
+                total_prefill_wall_time += step_duration
+            else:
+                decode_step_durations.append(step_duration)
+                total_decode_wall_time += step_duration
+                decode_batch_histogram[step_info["decode_batch_size"]] += 1
+                if step_info["execution_path"] == "decode_cuda_graph":
+                    decode_cuda_graph_steps += 1
+                else:
+                    decode_eager_steps += 1
 
             after_active_tokens = sum(seq.num_completion_tokens for seq in active_seqs)
             active_progressed = after_active_tokens > before_active_tokens and not is_prefill
@@ -183,6 +225,21 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
 
             if injected and is_prefill:
                 prefill_step_durations_after_inject.append(step_duration)
+
+            if injected and len(post_injection_timeline) < args.timeline_limit:
+                post_injection_timeline.append(
+                    {
+                        "step_id": step_id,
+                        "phase": "prefill" if is_prefill else "decode",
+                        "prefill_tokens": step_info["prefill_tokens"],
+                        "decode_batch_size": step_info["decode_batch_size"],
+                        "execution_path": step_info["execution_path"],
+                        "step_ms": round(step_duration * 1000, 3),
+                        "waiting": len(llm.scheduler.waiting),
+                        "running": len(llm.scheduler.running),
+                        "active_decode_unfinished": sum(not seq.is_finished for seq in active_seqs),
+                    }
+                )
 
             if (
                 not injected
@@ -242,6 +299,16 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "active_decode_gap_s_p95": round(percentile(active_decode_gaps, 0.95), 6),
             "active_decode_gap_s_max": round(max(active_decode_gaps), 6) if active_decode_gaps else 0.0,
             "active_decode_step_s_avg": round(mean(active_decode_step_durations), 6) if active_decode_step_durations else 0.0,
+            "total_prefill_wall_time_s": round(total_prefill_wall_time, 6),
+            "total_decode_wall_time_s": round(total_decode_wall_time, 6),
+            "decode_step_s_avg": round(mean(decode_step_durations), 6) if decode_step_durations else 0.0,
+            "decode_step_s_p50": round(percentile(decode_step_durations, 0.50), 6),
+            "decode_step_s_p95": round(percentile(decode_step_durations, 0.95), 6),
+            "decode_step_s_max": round(max(decode_step_durations), 6) if decode_step_durations else 0.0,
+            "decode_batch_histogram": dict(sorted(decode_batch_histogram.items())),
+            "decode_cuda_graph_steps": decode_cuda_graph_steps,
+            "decode_eager_steps": decode_eager_steps,
+            "post_injection_timeline": post_injection_timeline,
             "long_request_ttft_s": round(long_ttft_s, 6),
             "post_inject_prefill_step_s_max": round(max(prefill_step_durations_after_inject), 6)
             if prefill_step_durations_after_inject
