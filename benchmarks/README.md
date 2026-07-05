@@ -189,3 +189,17 @@ nsys profile \
     --warmup-decode-steps 8 \
     --profile-decode-steps 32
 ```
+
+## Phase 5: Attention decode contract
+
+Before writing a custom attention kernel, validate the current decode contract:
+
+```bash
+python benchmarks/bench_attention_decode_contract.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --batch-size 4 \
+  --context-len 513 \
+  --block-size 256 \
+  --num-blocks 16 \
+  --no-write
+```

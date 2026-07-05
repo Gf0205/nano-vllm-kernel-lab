@@ -83,6 +83,9 @@ minimal correctness and layout study for decode attention. If that study shows
 the existing FlashAttention path is already near-optimal or too risky, switch
 to GEMM/MLP as the safer optimization candidate.
 
+The concrete next artifact is `phase5_attention_decode_layout_plan.md` and
+`bench_attention_decode_contract.py`.
+
 ## 4. Explicit Non-Goals
 
 Do not start these yet:
