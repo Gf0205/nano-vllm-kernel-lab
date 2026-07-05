@@ -89,9 +89,19 @@ Paste back each printed row. The important fields are:
 - `latency_ms_p50`;
 - `latency_ms_p95`;
 - `latency_ms_min`;
-- `latency_ms_max`.
+- `latency_ms_max`;
 - `latency_us_per_token_avg`;
 - `tokens_per_s`.
 
 This run is still evidence gathering. It should produce a FlashAttention decode
 baseline and a go/no-go discussion, not an immediate Triton kernel integration.
+
+## 6. Microbenchmark Closeout
+
+The standalone baseline was run on AutoDL RTX 3090 and recorded in
+`phase5_attention_decode_microbench_summary.md`.
+
+All tested shapes passed correctness, and the measured FlashAttention decode
+latency was already low across the representative Qwen3-0.6B shapes. The
+current recommendation is no-go for immediate custom attention kernel work and
+to ask GPT whether to pivot Phase 5 toward the GEMM/MLP candidate.
