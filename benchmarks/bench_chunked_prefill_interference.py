@@ -55,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-num-seqs", type=int, default=64)
     parser.add_argument("--temperature", type=float, default=0.6)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--timeline-limit", type=int, default=48)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--include-decode-aware", action="store_true", help="Also run Policy A decode-aware chunked prefill.")
@@ -166,7 +167,14 @@ def has_prefill_decode_interleaving(phase_runs: list[dict]) -> bool:
     return "prefill" in phases and "decode" in phases and phases.count("prefill") > 1
 
 
-def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int, decode_aware: bool = False) -> dict:
+def run_case(
+    args: argparse.Namespace,
+    case: str,
+    budget: int,
+    vocab_size: int,
+    decode_aware: bool = False,
+    repeat: int = 0,
+) -> dict:
     model = os.path.expanduser(args.model)
     llm = LLM(
         model,
@@ -186,8 +194,9 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int, 
         ignore_eos=True,
         max_tokens=args.long_output_len,
     )
-    active_prompts = make_token_ids(args.active_decode_seqs, args.active_input_len, vocab_size, args.seed)
-    long_prompt = make_token_ids(1, args.long_input_len, vocab_size, args.seed + 100_000)[0]
+    case_seed = args.seed + repeat * 1_000_000
+    active_prompts = make_token_ids(args.active_decode_seqs, args.active_input_len, vocab_size, case_seed)
+    long_prompt = make_token_ids(1, args.long_input_len, vocab_size, case_seed + 100_000)[0]
     active_seqs = [add_tracked_request(llm, prompt, active_sampling) for prompt in active_prompts]
 
     reset_peak_memory()
@@ -326,6 +335,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int, 
         scheduler_metrics = llm.scheduler.metrics()
         return {
             "case": case,
+            "repeat": repeat,
             "model": Path(model).name,
             "enforce_eager": args.enforce_eager,
             "decode_aware_prefill_interleave": decode_aware,
@@ -390,21 +400,78 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int, 
             torch.cuda.empty_cache()
 
 
+def summarize_repeats(rows: list[dict]) -> list[dict]:
+    summaries = []
+    cases = []
+    for row in rows:
+        if row["case"] not in cases:
+            cases.append(row["case"])
+    for case in cases:
+        case_rows = [row for row in rows if row["case"] == case]
+
+        def values(key: str) -> list[float]:
+            return [float(row[key]) for row in case_rows]
+
+        gap_max = values("active_decode_gap_s_max")
+        gap_p95 = values("active_decode_gap_s_p95")
+        ttft = values("long_request_ttft_s")
+        post_wall = values("post_injection_wall_time_s")
+        summaries.append(
+            {
+                "case": case,
+                "repeats": len(case_rows),
+                "decode_aware_prefill_interleave": case_rows[0]["decode_aware_prefill_interleave"],
+                "active_decode_gap_s_max_mean": round(mean(gap_max), 6),
+                "active_decode_gap_s_max_min": round(min(gap_max), 6),
+                "active_decode_gap_s_max_max": round(max(gap_max), 6),
+                "active_decode_gap_s_p95_mean": round(mean(gap_p95), 6),
+                "long_request_ttft_s_mean": round(mean(ttft), 6),
+                "long_request_ttft_s_min": round(min(ttft), 6),
+                "long_request_ttft_s_max": round(max(ttft), 6),
+                "post_injection_wall_time_s_mean": round(mean(post_wall), 6),
+                "post_injection_wall_time_s_min": round(min(post_wall), 6),
+                "post_injection_wall_time_s_max": round(max(post_wall), 6),
+                "interleaved_runs": sum(int(row["prefill_decode_interleaved_after_injection"]) for row in case_rows),
+                "num_decode_aware_interleaves_min": min(row["num_decode_aware_interleaves"] for row in case_rows),
+                "num_decode_aware_interleaves_max": max(row["num_decode_aware_interleaves"] for row in case_rows),
+                "capacity_limited_runs": sum(int(row["capacity_limited"]) for row in case_rows),
+            }
+        )
+    return summaries
+
+
 def main() -> None:
     args = parse_args()
+    if args.repeats < 1:
+        raise ValueError("--repeats must be >= 1")
     model = os.path.expanduser(args.model)
     effective_max_model_len = validate_lengths(args, model)
     results_dir = ensure_results_dir()
     jsonl_path = results_dir / f"{args.output_prefix}.jsonl"
     md_path = results_dir / f"{args.output_prefix}.md"
+    summary_md_path = results_dir / f"{args.output_prefix}_repeat_summary.md"
 
     vocab_size = AutoTokenizer.from_pretrained(model, use_fast=True).vocab_size
-    rows = [
-        run_case(args, "non_chunked_long_prefill", args.normal_budget, vocab_size),
-        run_case(args, "chunked_long_prefill", args.chunked_budget, vocab_size),
-    ]
-    if args.include_decode_aware:
-        rows.append(run_case(args, "decode_aware_chunked_prefill", args.chunked_budget, vocab_size, decode_aware=True))
+    rows = []
+    for repeat in range(args.repeats):
+        rows.extend(
+            [
+                run_case(args, "non_chunked_long_prefill", args.normal_budget, vocab_size, repeat=repeat),
+                run_case(args, "chunked_long_prefill", args.chunked_budget, vocab_size, repeat=repeat),
+            ]
+        )
+        if args.include_decode_aware:
+            rows.append(
+                run_case(
+                    args,
+                    "decode_aware_chunked_prefill",
+                    args.chunked_budget,
+                    vocab_size,
+                    decode_aware=True,
+                    repeat=repeat,
+                )
+            )
+    summaries = summarize_repeats(rows)
 
     if not args.no_write:
         append_jsonl(
@@ -420,6 +487,10 @@ def main() -> None:
         if not args.no_write:
             append_jsonl(jsonl_path, {"type": "chunked_prefill_interference", **row})
         print(row)
+    for summary in summaries:
+        if not args.no_write:
+            append_jsonl(jsonl_path, {"type": "chunked_prefill_interference_repeat_summary", **summary})
+        print({"type": "repeat_summary", **summary})
 
     if not args.no_write:
         write_markdown_table(
@@ -427,6 +498,7 @@ def main() -> None:
             rows,
             [
                 "case",
+                "repeat",
                 "decode_aware_prefill_interleave",
                 "max_num_batched_tokens",
                 "requested_long_input_len",
@@ -450,8 +522,32 @@ def main() -> None:
                 "peak_running",
             ],
         )
+        write_markdown_table(
+            summary_md_path,
+            summaries,
+            [
+                "case",
+                "repeats",
+                "decode_aware_prefill_interleave",
+                "active_decode_gap_s_max_mean",
+                "active_decode_gap_s_max_min",
+                "active_decode_gap_s_max_max",
+                "active_decode_gap_s_p95_mean",
+                "long_request_ttft_s_mean",
+                "long_request_ttft_s_min",
+                "long_request_ttft_s_max",
+                "post_injection_wall_time_s_mean",
+                "post_injection_wall_time_s_min",
+                "post_injection_wall_time_s_max",
+                "interleaved_runs",
+                "num_decode_aware_interleaves_min",
+                "num_decode_aware_interleaves_max",
+                "capacity_limited_runs",
+            ],
+        )
         print(f"Wrote {jsonl_path}")
         print(f"Wrote {md_path}")
+        print(f"Wrote {summary_md_path}")
 
 
 if __name__ == "__main__":

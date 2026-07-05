@@ -236,6 +236,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --long-decode-reserve-blocks 0 \
   --timeline-limit 80 \
   --include-decode-aware \
+  --repeats 3 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
@@ -250,3 +251,6 @@ The key proof points are:
 
 Do not implement Triton kernels, quantization, speculative decoding, or broad
 profiling until this Policy A result is understood.
+
+The immediate closeout task is repeat stability, documented in
+`phase3_8_policy_a_summary.md`.
