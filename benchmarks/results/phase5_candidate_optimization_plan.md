@@ -95,3 +95,19 @@ Do not start these yet:
 - W4A16 full-model quantization;
 - KV compression;
 - Triton RoPE/RMSNorm replacement.
+
+## 5. Attention Decode Decision Update
+
+The standalone FlashAttention decode microbenchmark did not expose a clear
+replacement window. Attention decode remains an important end-to-end hotspot,
+but immediate custom attention kernel work is no-go.
+
+Phase 5 should now pivot to the GEMM/MLP candidate in baseline mode only:
+
+```text
+Measure Qwen3 MLP BF16 standalone shapes and segment latency before choosing
+any custom GEMM, W4A16, or fused MLP implementation.
+```
+
+The next concrete artifact is `bench_mlp_gemm_microbench.py` and
+`phase5_mlp_gemm_baseline_plan.md`.

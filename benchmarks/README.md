@@ -220,3 +220,20 @@ This script uses the same paged KV-cache and GQA contract as the engine decode
 path. It checks FlashAttention output against a PyTorch reference for each case
 before reporting CUDA-event latency, average microseconds per decoded token, and
 tokens/s for the standalone decode call.
+
+After attention decode replacement is no-go, measure the Qwen3 MLP/GEMM BF16
+baseline before considering any MLP kernel work:
+
+```bash
+python benchmarks/bench_mlp_gemm_microbench.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --token-cases 1,8,16,32,64,128,256,512,1024 \
+  --warmup-iters 20 \
+  --timing-iters 100 \
+  --no-write
+```
+
+This script reports `gate_up_proj`, `SiluAndMul`, `down_proj`, and full MLP
+latency for standalone BF16 shapes derived from the model config. It is a
+baseline and attribution step only; it does not implement W4A16, fused MLP, or
+engine integration.
