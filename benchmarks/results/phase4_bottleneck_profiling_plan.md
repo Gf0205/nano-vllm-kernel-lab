@@ -117,3 +117,53 @@ python benchmarks/bench_decode_profiler.py \
 Use graph mode to inspect CUDA Graph replay and kernel launch pattern. Use
 eager mode to attribute time to module-level regions before choosing a kernel
 optimization target.
+
+## 7. Fourth Step: Nsight Systems
+
+Use Nsight Systems only after PyTorch profiler confirms steady decode hotspots.
+On AutoDL, use the CLI `nsys` command. The GUI is not required in the cloud.
+
+First check availability:
+
+```bash
+which nsys
+nsys --version
+```
+
+Capture only steady-state decode with CUDA profiler API gating:
+
+```bash
+nsys profile \
+  --trace=cuda,nvtx,osrt \
+  --capture-range=cudaProfilerApi \
+  --capture-range-end=stop \
+  --sample=none \
+  --cpuctxsw=none \
+  --force-overwrite=true \
+  -o /root/autodl-tmp/nsys_decode_graph \
+  python benchmarks/bench_decode_nsys.py \
+    --model /root/huggingface/Qwen3-0.6B \
+    --num-seqs 32 \
+    --input-len 512 \
+    --output-len 128 \
+    --warmup-decode-steps 8 \
+    --profile-decode-steps 32
+```
+
+Inspect the report on AutoDL:
+
+```bash
+nsys stats /root/autodl-tmp/nsys_decode_graph.nsys-rep
+```
+
+What to check:
+
+- whether `flash_fwd_splitkv_kernel` dominates the Graph replay window;
+- how GEMM kernels interleave with attention kernels;
+- whether there are visible idle gaps between kernels;
+- whether synchronizations or memcpys appear inside the profiled decode range;
+- whether many small Triton kernels are meaningful in total time or just noise.
+
+If one FlashAttention decode kernel dominates, move to Nsight Compute for that
+kernel. If the timeline shows many fragmented small kernels or gaps, focus on
+launch pattern and graph replay behavior instead.

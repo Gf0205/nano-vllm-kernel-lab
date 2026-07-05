@@ -162,3 +162,30 @@ python benchmarks/bench_decode_profiler.py \
   --no-write \
   --output-prefix decode_profiler_3090
 ```
+
+For Nsight Systems on AutoDL, first check:
+
+```bash
+which nsys
+nsys --version
+```
+
+Then capture steady-state decode only:
+
+```bash
+nsys profile \
+  --trace=cuda,nvtx,osrt \
+  --capture-range=cudaProfilerApi \
+  --capture-range-end=stop \
+  --sample=none \
+  --cpuctxsw=none \
+  --force-overwrite=true \
+  -o /root/autodl-tmp/nsys_decode_graph \
+  python benchmarks/bench_decode_nsys.py \
+    --model /root/huggingface/Qwen3-0.6B \
+    --num-seqs 32 \
+    --input-len 512 \
+    --output-len 128 \
+    --warmup-decode-steps 8 \
+    --profile-decode-steps 32
+```
