@@ -64,7 +64,8 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --normal-budget 8192 \
   --chunked-budget 512 \
   --long-decode-reserve-blocks 0 \
-  --timeline-limit 48 \
+  --timeline-limit 80 \
+  --include-decode-aware \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
 ```
@@ -77,6 +78,7 @@ Primary metrics:
 - decode step average / P50 / P95 / max
 - CUDA Graph decode replay count
 - post-injection scheduler timeline
+- decode-aware interleave count
 - long request TTFT
 - number of chunked prefill steps
 - system output tok/s

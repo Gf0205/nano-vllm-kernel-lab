@@ -1,9 +1,8 @@
 # Phase 3.8 Decode-Aware Scheduling Design
 
-Phase 3.8 is a design phase, not an implementation phase. It follows the
-Phase 3.7 finding that upstream chunked prefill performs compute chunking but
-does not actively interleave decode execution between consecutive prefill
-chunks.
+Phase 3.8 starts from the Phase 3.7 finding that upstream chunked prefill
+performs compute chunking but does not actively interleave decode execution
+between consecutive prefill chunks.
 
 ## 1. Motivation
 
@@ -219,7 +218,35 @@ Do not continue to more complex policies if Policy A shows:
 
 ## 10. Next Step
 
+Policy A is implemented behind `decode_aware_prefill_interleave=False` by
+default. The benchmark can now run a third row with
+`--include-decode-aware`:
+
+```bash
+python benchmarks/bench_chunked_prefill_interference.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --active-decode-seqs 8 \
+  --active-input-len 128 \
+  --active-output-len 128 \
+  --long-input-len 3072 \
+  --long-output-len 32 \
+  --inject-after-decode-steps 8 \
+  --normal-budget 8192 \
+  --chunked-budget 512 \
+  --long-decode-reserve-blocks 0 \
+  --timeline-limit 80 \
+  --include-decode-aware \
+  --no-write \
+  --output-prefix chunked_prefill_interference_3090
+```
+
+The key proof points are:
+
+- `decode_aware_chunked_prefill` has `decode_aware_prefill_interleave=True`;
+- `num_decode_aware_interleaves` is greater than zero;
+- `post_injection_phase_runs` shows `prefill -> decode -> prefill`;
+- active decode gap P95/max improves enough to justify the throughput/TTFT
+  trade-off.
+
 Do not implement Triton kernels, quantization, speculative decoding, or broad
-profiling yet. The next engineering step is a minimal, feature-flagged scheduler
-policy for explicit prefill/decode interleaving, validated only on the canonical
-interference workload.
+profiling until this Policy A result is understood.

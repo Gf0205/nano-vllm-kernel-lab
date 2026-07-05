@@ -12,6 +12,8 @@ class Scheduler:
         self.max_num_batched_tokens = config.max_num_batched_tokens
         self.eos = config.eos
         self.block_size = config.kvcache_block_size
+        self.decode_aware_prefill_interleave = config.decode_aware_prefill_interleave
+        self.force_decode_next = False
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
@@ -25,6 +27,7 @@ class Scheduler:
         self.max_decode_batch_size = 0
         self.peak_waiting = 0
         self.peak_running = 0
+        self.num_decode_aware_interleaves = 0
 
     def is_finished(self):
         return not self.waiting and not self.running
@@ -40,6 +43,11 @@ class Scheduler:
     def schedule(self) -> tuple[list[Sequence], bool]:
         scheduled_seqs = []
         num_batched_tokens = 0
+
+        if self.force_decode_next and self.running:
+            self.force_decode_next = False
+            self.num_decode_aware_interleaves += 1
+            return self._schedule_decode()
 
         # prefill
         while self.waiting and len(scheduled_seqs) < self.max_num_seqs:
@@ -68,6 +76,8 @@ class Scheduler:
 
         if scheduled_seqs:
             chunked = any(seq.num_cached_tokens + seq.num_scheduled_tokens < seq.num_tokens for seq in scheduled_seqs)
+            # Policy A: after a chunked prefill, give active decode one chance.
+            self.force_decode_next = self.decode_aware_prefill_interleave and chunked and bool(self.running)
             self.num_prefill_steps += 1
             self.num_chunked_prefill_steps += int(chunked)
             self.total_prefill_tokens += num_batched_tokens
@@ -75,7 +85,11 @@ class Scheduler:
             self._update_queue_peaks()
             return scheduled_seqs, True
 
-        # decode
+        self.force_decode_next = False
+        return self._schedule_decode()
+
+    def _schedule_decode(self) -> tuple[list[Sequence], bool]:
+        scheduled_seqs = []
         while self.running and len(scheduled_seqs) < self.max_num_seqs:
             seq = self.running.popleft()
             while not self.block_manager.can_append(seq):
@@ -131,6 +145,8 @@ class Scheduler:
             "num_prefill_steps": self.num_prefill_steps,
             "num_decode_steps": self.num_decode_steps,
             "num_chunked_prefill_steps": self.num_chunked_prefill_steps,
+            "decode_aware_prefill_interleave": self.decode_aware_prefill_interleave,
+            "num_decode_aware_interleaves": self.num_decode_aware_interleaves,
             "num_preemptions": self.num_preemptions,
             "total_prefill_tokens": self.total_prefill_tokens,
             "total_decode_tokens": self.total_decode_tokens,

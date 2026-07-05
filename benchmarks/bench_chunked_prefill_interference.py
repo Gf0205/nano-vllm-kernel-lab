@@ -57,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--timeline-limit", type=int, default=48)
     parser.add_argument("--enforce-eager", action="store_true")
+    parser.add_argument("--include-decode-aware", action="store_true", help="Also run Policy A decode-aware chunked prefill.")
     parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     parser.add_argument("--output-prefix", default="chunked_prefill_interference")
     return parser.parse_args()
@@ -165,7 +166,7 @@ def has_prefill_decode_interleaving(phase_runs: list[dict]) -> bool:
     return "prefill" in phases and "decode" in phases and phases.count("prefill") > 1
 
 
-def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) -> dict:
+def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int, decode_aware: bool = False) -> dict:
     model = os.path.expanduser(args.model)
     llm = LLM(
         model,
@@ -173,6 +174,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
         max_model_len=args.max_model_len,
         max_num_seqs=args.max_num_seqs,
         max_num_batched_tokens=budget,
+        decode_aware_prefill_interleave=decode_aware,
     )
     active_sampling = SamplingParams(
         temperature=args.temperature,
@@ -326,6 +328,7 @@ def run_case(args: argparse.Namespace, case: str, budget: int, vocab_size: int) 
             "case": case,
             "model": Path(model).name,
             "enforce_eager": args.enforce_eager,
+            "decode_aware_prefill_interleave": decode_aware,
             "max_num_batched_tokens": budget,
             "active_decode_seqs": args.active_decode_seqs,
             "active_input_len": args.active_input_len,
@@ -400,6 +403,8 @@ def main() -> None:
         run_case(args, "non_chunked_long_prefill", args.normal_budget, vocab_size),
         run_case(args, "chunked_long_prefill", args.chunked_budget, vocab_size),
     ]
+    if args.include_decode_aware:
+        rows.append(run_case(args, "decode_aware_chunked_prefill", args.chunked_budget, vocab_size, decode_aware=True))
 
     if not args.no_write:
         append_jsonl(
@@ -422,6 +427,7 @@ def main() -> None:
             rows,
             [
                 "case",
+                "decode_aware_prefill_interleave",
                 "max_num_batched_tokens",
                 "requested_long_input_len",
                 "effective_long_input_len",
@@ -438,6 +444,7 @@ def main() -> None:
                 "post_inject_prefill_step_s_max",
                 "num_prefill_steps",
                 "num_chunked_prefill_steps",
+                "num_decode_aware_interleaves",
                 "num_decode_steps",
                 "peak_waiting",
                 "peak_running",
