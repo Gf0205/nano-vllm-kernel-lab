@@ -42,3 +42,20 @@ def test_percent_of_total_handles_zero_and_rounding():
     assert bench.percent_of_total(2.5, 10.0) == 25.0
     assert bench.percent_of_total(1.0, 3.0) == 33.3333
     assert bench.percent_of_total(1.0, 0.0) == 0.0
+
+
+def test_add_boundary_percentages_uses_consistent_full_timing():
+    bench = load_module()
+    row = {
+        "gate_up_boundary_ms_avg": 6.0,
+        "silu_mul_boundary_ms_avg": 1.5,
+        "down_boundary_ms_avg": 2.5,
+        "full_mlp_boundary_ms_avg": 10.0,
+    }
+
+    bench.add_boundary_percentages(row)
+
+    assert row["gate_up_boundary_pct_of_full"] == 60.0
+    assert row["silu_mul_boundary_pct_of_full"] == 15.0
+    assert row["down_boundary_pct_of_full"] == 25.0
+    assert row["boundary_pct_sum"] == 100.0

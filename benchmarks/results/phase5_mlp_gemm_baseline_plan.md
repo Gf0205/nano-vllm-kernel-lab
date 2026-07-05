@@ -99,3 +99,40 @@ The result supports continuing with a deeper standalone GEMM study:
 - `down` is the second GEMM hotspot;
 - `SiluAndMul` is mostly an overhead/activation concern for small token counts;
 - no W4A16 or fused kernel implementation should start yet.
+
+## 7. Boundary Attribution Follow-Up
+
+The first baseline timed individual segments separately and compared them with
+an independently timed full MLP call. Those percentages were useful for
+direction, but they were not additive and could overstate segment shares.
+
+The follow-up script records consistent boundary timing inside one full MLP
+call:
+
+```text
+start -> gate_up -> silu_mul -> down
+```
+
+Use this command:
+
+```bash
+python benchmarks/bench_mlp_gemm_microbench.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --token-cases 128,256,512,1024 \
+  --warmup-iters 20 \
+  --timing-iters 100 \
+  --no-write
+```
+
+Important fields:
+
+- `gate_up_boundary_ms_avg`;
+- `silu_mul_boundary_ms_avg`;
+- `down_boundary_ms_avg`;
+- `full_mlp_boundary_ms_avg`;
+- `gate_up_boundary_pct_of_full`;
+- `silu_mul_boundary_pct_of_full`;
+- `down_boundary_pct_of_full`;
+- `boundary_pct_sum`.
+
+Use boundary percentages for the next go/no-go judgment.

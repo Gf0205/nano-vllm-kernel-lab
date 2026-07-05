@@ -42,6 +42,19 @@ def percent_of_total(value: float, total: float) -> float:
     return round(value * 100.0 / total, 4) if total else 0.0
 
 
+def add_boundary_percentages(row: dict) -> None:
+    full_avg = row["full_mlp_boundary_ms_avg"]
+    row["gate_up_boundary_pct_of_full"] = percent_of_total(row["gate_up_boundary_ms_avg"], full_avg)
+    row["silu_mul_boundary_pct_of_full"] = percent_of_total(row["silu_mul_boundary_ms_avg"], full_avg)
+    row["down_boundary_pct_of_full"] = percent_of_total(row["down_boundary_ms_avg"], full_avg)
+    row["boundary_pct_sum"] = round(
+        row["gate_up_boundary_pct_of_full"]
+        + row["silu_mul_boundary_pct_of_full"]
+        + row["down_boundary_pct_of_full"],
+        4,
+    )
+
+
 def mlp_projection_shapes(hidden_size: int, intermediate_size: int, num_tokens: int) -> dict[str, tuple[int, ...]]:
     return {
         "input_shape": (num_tokens, hidden_size),
@@ -97,6 +110,48 @@ def mlp_forward(x: torch.Tensor, gate_up_weight: torch.Tensor, down_weight: torc
     return F.linear(activated, down_weight)
 
 
+def time_mlp_boundaries(
+    x: torch.Tensor,
+    gate_up_weight: torch.Tensor,
+    down_weight: torch.Tensor,
+    warmup_iters: int,
+    timing_iters: int,
+) -> dict[str, list[float]]:
+    import torch
+    import torch.nn.functional as F
+
+    for _ in range(warmup_iters):
+        mlp_forward(x, gate_up_weight, down_weight)
+    torch.cuda.synchronize()
+
+    timings = {
+        "gate_up_boundary": [],
+        "silu_mul_boundary": [],
+        "down_boundary": [],
+        "full_mlp_boundary": [],
+    }
+    for _ in range(timing_iters):
+        start = torch.cuda.Event(enable_timing=True)
+        after_gate_up = torch.cuda.Event(enable_timing=True)
+        after_silu = torch.cuda.Event(enable_timing=True)
+        after_down = torch.cuda.Event(enable_timing=True)
+
+        start.record()
+        gate_up = F.linear(x, gate_up_weight)
+        after_gate_up.record()
+        activated = silu_and_mul(gate_up)
+        after_silu.record()
+        F.linear(activated, down_weight)
+        after_down.record()
+        after_down.synchronize()
+
+        timings["gate_up_boundary"].append(start.elapsed_time(after_gate_up))
+        timings["silu_mul_boundary"].append(after_gate_up.elapsed_time(after_silu))
+        timings["down_boundary"].append(after_silu.elapsed_time(after_down))
+        timings["full_mlp_boundary"].append(start.elapsed_time(after_down))
+    return timings
+
+
 def cuda_time_ms(fn, warmup_iters: int, timing_iters: int) -> list[float]:
     import torch
 
@@ -142,6 +197,7 @@ def run_case(
     act_times = cuda_time_ms(lambda: silu_and_mul(gate_up), warmup_iters, timing_iters)
     down_times = cuda_time_ms(lambda: F.linear(activated, down_weight), warmup_iters, timing_iters)
     full_times = cuda_time_ms(lambda: mlp_forward(x, gate_up_weight, down_weight), warmup_iters, timing_iters)
+    boundary_times = time_mlp_boundaries(x, gate_up_weight, down_weight, warmup_iters, timing_iters)
 
     row = {
         "num_tokens": num_tokens,
@@ -156,10 +212,13 @@ def run_case(
     row.update(summarize_ms(act_times, "silu_mul"))
     row.update(summarize_ms(down_times, "down"))
     row.update(summarize_ms(full_times, "full_mlp"))
+    for name, values in boundary_times.items():
+        row.update(summarize_ms(values, name))
     full_avg = row["full_mlp_ms_avg"]
     row["gate_up_pct_of_full"] = percent_of_total(row["gate_up_ms_avg"], full_avg)
     row["silu_mul_pct_of_full"] = percent_of_total(row["silu_mul_ms_avg"], full_avg)
     row["down_pct_of_full"] = percent_of_total(row["down_ms_avg"], full_avg)
+    add_boundary_percentages(row)
     row["gate_up_tokens_per_s"] = round(num_tokens * 1000.0 / row["gate_up_ms_avg"], 2) if row["gate_up_ms_avg"] else 0.0
     row["down_tokens_per_s"] = round(num_tokens * 1000.0 / row["down_ms_avg"], 2) if row["down_ms_avg"] else 0.0
     row["full_mlp_tokens_per_s"] = round(num_tokens * 1000.0 / full_avg, 2) if full_avg else 0.0
@@ -221,9 +280,17 @@ def main() -> None:
             "silu_mul_ms_avg",
             "down_ms_avg",
             "full_mlp_ms_avg",
+            "gate_up_boundary_ms_avg",
+            "silu_mul_boundary_ms_avg",
+            "down_boundary_ms_avg",
+            "full_mlp_boundary_ms_avg",
             "gate_up_pct_of_full",
             "silu_mul_pct_of_full",
             "down_pct_of_full",
+            "gate_up_boundary_pct_of_full",
+            "silu_mul_boundary_pct_of_full",
+            "down_boundary_pct_of_full",
+            "boundary_pct_sum",
             "gate_up_tokens_per_s",
             "down_tokens_per_s",
             "full_mlp_tokens_per_s",

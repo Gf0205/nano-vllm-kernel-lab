@@ -69,6 +69,11 @@ The percent columns are diagnostic, not additive. Each segment is timed
 separately, while `full_mlp` is timed as one combined call, so separate segment
 percentages can sum above 100%.
 
+Because of that, the next run should use the updated boundary timing fields in
+`bench_mlp_gemm_microbench.py`. Those fields measure `gate_up`, `SiluAndMul`,
+and `down` inside the same full MLP execution and should be used for percentage
+attribution.
+
 ## 4. Go / No-Go
 
 MLP/GEMM candidate is go for deeper standalone study.
@@ -98,3 +103,7 @@ Add a focused GEMM baseline that compares:
 Do not start full-model W4A16 quantization yet. If a custom path is explored,
 it should begin as a standalone GEMM comparison with correctness and timing,
 not as an engine replacement.
+
+Before adding any candidate GEMM route, first run the boundary attribution
+follow-up for token cases `128,256,512,1024` and confirm the segment shares are
+consistent with the first baseline.

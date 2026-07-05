@@ -227,7 +227,7 @@ baseline before considering any MLP kernel work:
 ```bash
 python benchmarks/bench_mlp_gemm_microbench.py \
   --model /root/huggingface/Qwen3-0.6B \
-  --token-cases 1,8,16,32,64,128,256,512,1024 \
+  --token-cases 128,256,512,1024 \
   --warmup-iters 20 \
   --timing-iters 100 \
   --no-write
@@ -236,4 +236,5 @@ python benchmarks/bench_mlp_gemm_microbench.py \
 This script reports `gate_up_proj`, `SiluAndMul`, `down_proj`, and full MLP
 latency for standalone BF16 shapes derived from the model config. It is a
 baseline and attribution step only; it does not implement W4A16, fused MLP, or
-engine integration.
+engine integration. Prefer the `*_boundary_*` fields for percentage
+attribution because they come from one consistently timed full MLP call.
