@@ -46,3 +46,56 @@ def test_speedup_vs_baseline_handles_zero_and_rounding():
     assert bench.speedup_vs_baseline(baseline_ms=3.0, candidate_ms=2.0) == 1.5
     assert bench.speedup_vs_baseline(baseline_ms=0.0, candidate_ms=2.0) == 0.0
     assert bench.speedup_vs_baseline(baseline_ms=2.0, candidate_ms=0.0) == 0.0
+
+
+def test_summarize_repeats_groups_rows_by_shape_and_variant():
+    bench = load_module()
+    rows = [
+        {"projection": "gate_up", "variant": "linear", "num_tokens": 128, "latency_ms_avg": 1.0, "speedup_vs_linear": 1.0},
+        {"projection": "gate_up", "variant": "linear", "num_tokens": 128, "latency_ms_avg": 2.0, "speedup_vs_linear": 1.0},
+        {
+            "projection": "gate_up",
+            "variant": "matmul_pretransposed",
+            "num_tokens": 128,
+            "latency_ms_avg": 0.8,
+            "speedup_vs_linear": 1.25,
+        },
+        {
+            "projection": "gate_up",
+            "variant": "matmul_pretransposed",
+            "num_tokens": 128,
+            "latency_ms_avg": 1.0,
+            "speedup_vs_linear": 1.1,
+        },
+    ]
+
+    summary = bench.summarize_repeats(rows)
+
+    assert summary == [
+        {
+            "projection": "gate_up",
+            "variant": "linear",
+            "num_tokens": 128,
+            "repeats": 2,
+            "latency_ms_avg_mean": 1.5,
+            "latency_ms_avg_min": 1.0,
+            "latency_ms_avg_max": 2.0,
+            "speedup_vs_linear_mean": 1.0,
+            "speedup_vs_linear_min": 1.0,
+            "speedup_vs_linear_max": 1.0,
+            "faster_than_linear_runs": 0,
+        },
+        {
+            "projection": "gate_up",
+            "variant": "matmul_pretransposed",
+            "num_tokens": 128,
+            "repeats": 2,
+            "latency_ms_avg_mean": 0.9,
+            "latency_ms_avg_min": 0.8,
+            "latency_ms_avg_max": 1.0,
+            "speedup_vs_linear_mean": 1.175,
+            "speedup_vs_linear_min": 1.1,
+            "speedup_vs_linear_max": 1.25,
+            "faster_than_linear_runs": 2,
+        },
+    ]

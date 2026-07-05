@@ -73,6 +73,35 @@ def speedup_vs_baseline(baseline_ms: float, candidate_ms: float) -> float:
     return round(baseline_ms / candidate_ms, 4)
 
 
+def summarize_repeats(rows: list[dict]) -> list[dict]:
+    grouped: dict[tuple[str, str, int], list[dict]] = {}
+    for row in rows:
+        key = (row["projection"], row["variant"], row["num_tokens"])
+        grouped.setdefault(key, []).append(row)
+
+    out = []
+    for projection, variant, num_tokens in sorted(grouped):
+        group = grouped[(projection, variant, num_tokens)]
+        latencies = [row["latency_ms_avg"] for row in group]
+        speedups = [row["speedup_vs_linear"] for row in group]
+        out.append(
+            {
+                "projection": projection,
+                "variant": variant,
+                "num_tokens": num_tokens,
+                "repeats": len(group),
+                "latency_ms_avg_mean": round(mean(latencies), 4),
+                "latency_ms_avg_min": round(min(latencies), 4),
+                "latency_ms_avg_max": round(max(latencies), 4),
+                "speedup_vs_linear_mean": round(mean(speedups), 4),
+                "speedup_vs_linear_min": round(min(speedups), 4),
+                "speedup_vs_linear_max": round(max(speedups), 4),
+                "faster_than_linear_runs": sum(speedup > 1.0 for speedup in speedups),
+            }
+        )
+    return out
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare torch/cuBLAS BF16 GEMM call variants for Qwen3 MLP shapes.")
     parser.add_argument("--model", default="~/huggingface/Qwen3-0.6B/")
@@ -80,6 +109,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--projections", default="gate_up,down")
     parser.add_argument("--variants", default=",".join(default_variants()))
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--warmup-iters", type=int, default=20)
     parser.add_argument("--timing-iters", type=int, default=100)
     parser.add_argument("--rtol", type=float, default=2e-2)
@@ -233,27 +263,40 @@ def main() -> None:
     if not args.no_write:
         append_jsonl(jsonl_path, {"type": "env", "env": collect_env()})
 
-    for projection in projections:
-        for num_tokens in token_cases:
-            case_rows = run_case(
-                projection=projection,
-                num_tokens=num_tokens,
-                hidden_size=hidden_size,
-                intermediate_size=intermediate_size,
-                dtype=dtype,
-                variants=variants,
-                warmup_iters=args.warmup_iters,
-                timing_iters=args.timing_iters,
-                seed=args.seed,
-                rtol=args.rtol,
-                atol=args.atol,
-            )
-            for row in case_rows:
-                row["model"] = Path(model).name
-                rows.append(row)
-                print(row)
-                if not args.no_write:
-                    append_jsonl(jsonl_path, {"type": "mlp_gemm_compare", **row})
+    if args.repeats < 1:
+        raise ValueError("--repeats must be >= 1")
+
+    for repeat in range(args.repeats):
+        repeat_seed = args.seed + repeat * 10000
+        for projection in projections:
+            for num_tokens in token_cases:
+                case_rows = run_case(
+                    projection=projection,
+                    num_tokens=num_tokens,
+                    hidden_size=hidden_size,
+                    intermediate_size=intermediate_size,
+                    dtype=dtype,
+                    variants=variants,
+                    warmup_iters=args.warmup_iters,
+                    timing_iters=args.timing_iters,
+                    seed=repeat_seed,
+                    rtol=args.rtol,
+                    atol=args.atol,
+                )
+                for row in case_rows:
+                    row["model"] = Path(model).name
+                    row["repeat"] = repeat
+                    row["repeats"] = args.repeats
+                    rows.append(row)
+                    print(row)
+                    if not args.no_write:
+                        append_jsonl(jsonl_path, {"type": "mlp_gemm_compare", **row})
+
+    repeat_summary = summarize_repeats(rows)
+    for row in repeat_summary:
+        print({"type": "repeat_summary", **row})
+        if not args.no_write:
+            append_jsonl(jsonl_path, {"type": "repeat_summary", **row})
 
     if not args.no_write:
         columns = [

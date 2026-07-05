@@ -247,12 +247,15 @@ python benchmarks/bench_mlp_gemm_compare.py \
   --model /root/huggingface/Qwen3-0.6B \
   --token-cases 128,256,512,1024 \
   --projections gate_up,down \
-  --variants linear,matmul_t,matmul_contiguous_t \
+  --variants linear,matmul_t,matmul_pretransposed \
+  --repeats 3 \
   --warmup-iters 20 \
   --timing-iters 100 \
   --no-write
 ```
 
 This comparison uses `F.linear` as the correctness and timing baseline, then
-checks `torch.matmul(x, weight.t())` and a contiguous-transpose variant. It is
-still a standalone baseline step, not W4A16, fused MLP, or engine integration.
+checks `torch.matmul(x, weight.t())` and a pretransposed-weight variant. It
+prints per-run rows plus `repeat_summary` rows so small layout gains can be
+checked for stability. It is still a standalone baseline step, not W4A16, fused
+MLP, or engine integration.
