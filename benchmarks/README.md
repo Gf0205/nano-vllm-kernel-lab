@@ -136,3 +136,15 @@ python benchmarks/bench_internal_timing.py \
 
 This reports prefill/decode time split into scheduler, model runner, and
 postprocess segments.
+
+If `model_runner.call` dominates, split it further:
+
+```bash
+python benchmarks/bench_model_runner_timing.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --no-write \
+  --output-prefix model_runner_timing_3090
+```

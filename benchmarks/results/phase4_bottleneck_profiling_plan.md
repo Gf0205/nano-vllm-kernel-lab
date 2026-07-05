@@ -48,3 +48,34 @@ python benchmarks/bench_internal_timing.py ... --enforce-eager
 
 Do not choose Triton, quantization, speculative decoding, or KV compression
 until this timing identifies a concrete hotspot.
+
+## 5. Second Step: ModelRunner Breakdown
+
+If internal timing shows `model_runner.call` dominates, split
+`ModelRunner.run` itself:
+
+```bash
+python benchmarks/bench_model_runner_timing.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --no-write \
+  --output-prefix model_runner_timing_3090
+```
+
+Run the eager comparison as well:
+
+```bash
+python benchmarks/bench_model_runner_timing.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --enforce-eager \
+  --no-write \
+  --output-prefix model_runner_timing_3090_eager
+```
+
+This checks whether the decode outlier is in input preparation, graph replay /
+forward, logits projection, or sampler.
