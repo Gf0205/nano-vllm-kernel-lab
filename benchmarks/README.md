@@ -120,3 +120,19 @@ All benchmark scripts write:
 
 Record the GPU, CUDA, PyTorch, Triton, Transformers, and FlashAttention
 versions together with the result files before moving to kernel optimization.
+## Phase 4: Bottleneck profiling
+
+Start with internal timing before choosing an optimization target:
+
+```bash
+python benchmarks/bench_internal_timing.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --no-write \
+  --output-prefix internal_timing_3090
+```
+
+This reports prefill/decode time split into scheduler, model runner, and
+postprocess segments.
