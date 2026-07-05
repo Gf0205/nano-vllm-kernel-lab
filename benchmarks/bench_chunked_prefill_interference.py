@@ -13,6 +13,7 @@ from utils import (
     cuda_sync,
     ensure_results_dir,
     make_token_ids,
+    parse_int_list,
     peak_memory_gb,
     reset_peak_memory,
     write_markdown_table,
@@ -59,6 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeline-limit", type=int, default=48)
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--include-decode-aware", action="store_true", help="Also run Policy A decode-aware chunked prefill.")
+    parser.add_argument("--decode-aware-cadences", default="1", help="Comma-separated cadence values used with --include-decode-aware.")
     parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     parser.add_argument("--output-prefix", default="chunked_prefill_interference")
     return parser.parse_args()
@@ -173,6 +175,7 @@ def run_case(
     budget: int,
     vocab_size: int,
     decode_aware: bool = False,
+    cadence: int = 1,
     repeat: int = 0,
 ) -> dict:
     model = os.path.expanduser(args.model)
@@ -183,6 +186,7 @@ def run_case(
         max_num_seqs=args.max_num_seqs,
         max_num_batched_tokens=budget,
         decode_aware_prefill_interleave=decode_aware,
+        prefill_interleave_every_n_chunks=cadence,
     )
     active_sampling = SamplingParams(
         temperature=args.temperature,
@@ -339,6 +343,7 @@ def run_case(
             "model": Path(model).name,
             "enforce_eager": args.enforce_eager,
             "decode_aware_prefill_interleave": decode_aware,
+            "prefill_interleave_every_n_chunks": cadence,
             "max_num_batched_tokens": budget,
             "active_decode_seqs": args.active_decode_seqs,
             "active_input_len": args.active_input_len,
@@ -421,6 +426,7 @@ def summarize_repeats(rows: list[dict]) -> list[dict]:
                 "case": case,
                 "repeats": len(case_rows),
                 "decode_aware_prefill_interleave": case_rows[0]["decode_aware_prefill_interleave"],
+                "prefill_interleave_every_n_chunks": case_rows[0]["prefill_interleave_every_n_chunks"],
                 "active_decode_gap_s_max_mean": round(mean(gap_max), 6),
                 "active_decode_gap_s_max_min": round(min(gap_max), 6),
                 "active_decode_gap_s_max_max": round(max(gap_max), 6),
@@ -444,6 +450,9 @@ def main() -> None:
     args = parse_args()
     if args.repeats < 1:
         raise ValueError("--repeats must be >= 1")
+    cadences = parse_int_list(args.decode_aware_cadences)
+    if not cadences or any(cadence < 1 for cadence in cadences):
+        raise ValueError("--decode-aware-cadences must contain positive integers")
     model = os.path.expanduser(args.model)
     effective_max_model_len = validate_lengths(args, model)
     results_dir = ensure_results_dir()
@@ -461,16 +470,18 @@ def main() -> None:
             ]
         )
         if args.include_decode_aware:
-            rows.append(
-                run_case(
-                    args,
-                    "decode_aware_chunked_prefill",
-                    args.chunked_budget,
-                    vocab_size,
-                    decode_aware=True,
-                    repeat=repeat,
+            for cadence in cadences:
+                rows.append(
+                    run_case(
+                        args,
+                        f"decode_aware_chunked_n{cadence}",
+                        args.chunked_budget,
+                        vocab_size,
+                        decode_aware=True,
+                        cadence=cadence,
+                        repeat=repeat,
+                    )
                 )
-            )
     summaries = summarize_repeats(rows)
 
     if not args.no_write:
@@ -500,6 +511,7 @@ def main() -> None:
                 "case",
                 "repeat",
                 "decode_aware_prefill_interleave",
+                "prefill_interleave_every_n_chunks",
                 "max_num_batched_tokens",
                 "requested_long_input_len",
                 "effective_long_input_len",
@@ -529,6 +541,7 @@ def main() -> None:
                 "case",
                 "repeats",
                 "decode_aware_prefill_interleave",
+                "prefill_interleave_every_n_chunks",
                 "active_decode_gap_s_max_mean",
                 "active_decode_gap_s_max_min",
                 "active_decode_gap_s_max_max",

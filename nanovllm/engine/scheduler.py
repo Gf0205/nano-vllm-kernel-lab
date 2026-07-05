@@ -13,6 +13,8 @@ class Scheduler:
         self.eos = config.eos
         self.block_size = config.kvcache_block_size
         self.decode_aware_prefill_interleave = config.decode_aware_prefill_interleave
+        self.prefill_interleave_every_n_chunks = config.prefill_interleave_every_n_chunks
+        self.prefill_chunks_since_decode = 0
         self.force_decode_next = False
         self.block_manager = BlockManager(config.num_kvcache_blocks, config.kvcache_block_size)
         self.waiting: deque[Sequence] = deque()
@@ -46,6 +48,7 @@ class Scheduler:
 
         if self.force_decode_next and self.running:
             self.force_decode_next = False
+            self.prefill_chunks_since_decode = 0
             self.num_decode_aware_interleaves += 1
             return self._schedule_decode()
 
@@ -76,8 +79,14 @@ class Scheduler:
 
         if scheduled_seqs:
             chunked = any(seq.num_cached_tokens + seq.num_scheduled_tokens < seq.num_tokens for seq in scheduled_seqs)
-            # Policy A: after a chunked prefill, give active decode one chance.
-            self.force_decode_next = self.decode_aware_prefill_interleave and chunked and bool(self.running)
+            self.force_decode_next = False
+            if self.decode_aware_prefill_interleave and chunked:
+                # Static cadence: N=1 reproduces Policy A; N=2/4 delays decode.
+                self.prefill_chunks_since_decode += 1
+                if self.prefill_chunks_since_decode >= self.prefill_interleave_every_n_chunks and self.running:
+                    self.force_decode_next = True
+            elif not chunked:
+                self.prefill_chunks_since_decode = 0
             self.num_prefill_steps += 1
             self.num_chunked_prefill_steps += int(chunked)
             self.total_prefill_tokens += num_batched_tokens
@@ -146,6 +155,7 @@ class Scheduler:
             "num_decode_steps": self.num_decode_steps,
             "num_chunked_prefill_steps": self.num_chunked_prefill_steps,
             "decode_aware_prefill_interleave": self.decode_aware_prefill_interleave,
+            "prefill_interleave_every_n_chunks": self.prefill_interleave_every_n_chunks,
             "num_decode_aware_interleaves": self.num_decode_aware_interleaves,
             "num_preemptions": self.num_preemptions,
             "total_prefill_tokens": self.total_prefill_tokens,

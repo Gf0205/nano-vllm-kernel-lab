@@ -1,7 +1,8 @@
 # Phase 3.9 Cadence Ablation Design
 
-Phase 3.9 is a design phase for a minimal cadence ablation. It should not
-introduce adaptive scheduling yet.
+Phase 3.9 is a minimal static-cadence ablation. It should not introduce
+adaptive scheduling yet. The static cadence knob is implemented as
+`prefill_interleave_every_n_chunks`; RTX 3090 validation is still required.
 
 ## 1. Motivation
 
@@ -75,6 +76,28 @@ repeats: 3
 CUDA Graph: enabled
 ```
 
+Suggested command:
+
+```bash
+python benchmarks/bench_chunked_prefill_interference.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --active-decode-seqs 8 \
+  --active-input-len 128 \
+  --active-output-len 128 \
+  --long-input-len 3072 \
+  --long-output-len 32 \
+  --inject-after-decode-steps 8 \
+  --normal-budget 8192 \
+  --chunked-budget 512 \
+  --long-decode-reserve-blocks 0 \
+  --timeline-limit 80 \
+  --include-decode-aware \
+  --decode-aware-cadences 1,2,4 \
+  --repeats 3 \
+  --no-write \
+  --output-prefix cadence_ablation_3090
+```
+
 ## 5. Primary Metrics
 
 | Metric | Why it matters |
@@ -84,6 +107,7 @@ CUDA Graph: enabled
 | `long_request_ttft_s_mean` | long-request progress trade-off |
 | `post_injection_wall_time_s_mean` | overall completion window |
 | `interleaved_runs` | confirms the policy actually changed schedule order |
+| `prefill_interleave_every_n_chunks` | identifies N=1/2/4 cadence rows |
 | `num_decode_aware_interleaves_min/max` | checks cadence execution |
 | `post_injection_phase_runs` | human-readable schedule proof |
 | `decode_batch_histogram` | checks whether decode batching is fragmented |

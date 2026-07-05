@@ -66,6 +66,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --long-decode-reserve-blocks 0 \
   --timeline-limit 80 \
   --include-decode-aware \
+  --decode-aware-cadences 1,2,4 \
   --repeats 3 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090

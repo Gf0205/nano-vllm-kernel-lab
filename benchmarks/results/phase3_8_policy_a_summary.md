@@ -112,6 +112,7 @@ python benchmarks/bench_chunked_prefill_interference.py \
   --long-decode-reserve-blocks 0 \
   --timeline-limit 80 \
   --include-decode-aware \
+  --decode-aware-cadences 1 \
   --repeats 3 \
   --no-write \
   --output-prefix chunked_prefill_interference_3090
@@ -121,7 +122,7 @@ Check the printed `repeat_summary` rows.
 
 Phase 3.8 closeout criteria were:
 
-- `decode_aware_chunked_prefill.interleaved_runs == repeats`;
+- `decode_aware_chunked_n1.interleaved_runs == repeats`;
 - `num_decode_aware_interleaves_min > 0`;
 - Policy A keeps `active_decode_gap_s_max_mean` clearly below upstream chunked;
 - Policy A does not cause capacity-limited runs;
