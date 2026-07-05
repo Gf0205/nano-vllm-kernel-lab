@@ -102,7 +102,8 @@ as a KV-capacity finding rather than a latency result.
 3. Close Phase 3.7 as chunked prefill timeline analysis.
 4. Design a minimal decode-aware scheduler policy before implementation.
 5. Treat Phase 2 as smoke only; use audited baseline for claims.
-6. Enter bottleneck profiling after scheduler policy evaluation.
-7. Use profiler evidence to choose profile-driven optimization targets.
-8. Keep advanced features like W4A16, speculative decoding, paged decode
+6. Optionally design a minimal N=1/2/4 cadence ablation before implementing it.
+7. Enter bottleneck profiling after scheduler policy evaluation.
+8. Use profiler evidence to choose profile-driven optimization targets.
+9. Keep advanced features like W4A16, speculative decoding, paged decode
    attention, and KV compression as optional later phases.

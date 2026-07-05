@@ -252,5 +252,7 @@ The key proof points are:
 Do not implement Triton kernels, quantization, speculative decoding, or broad
 profiling until this Policy A result is understood.
 
-The immediate closeout task is repeat stability, documented in
-`phase3_8_policy_a_summary.md`.
+Phase 3.8 is closed in `phase3_8_policy_a_summary.md`. The next possible
+design-only step is a minimal cadence ablation in
+`phase3_9_cadence_ablation_design.md`; do not implement adaptive scheduling
+before that trade-off is understood.
