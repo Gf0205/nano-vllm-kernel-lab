@@ -105,7 +105,8 @@ as a KV-capacity finding rather than a latency result.
 5. Treat Phase 2 as smoke only; use audited baseline for claims.
 6. Close static N=1/2/4 cadence ablation; keep N=2 as a workload-specific
    balanced candidate, not a global default.
-7. Enter bottleneck profiling after scheduler policy evaluation.
-8. Use profiler evidence to choose profile-driven optimization targets.
+7. Close bottleneck profiling: steady decode is dominated by FlashAttention
+   decode and BF16 GEMM.
+8. Evaluate Phase 5 attention-decode vs GEMM candidates before implementing.
 9. Keep advanced features like W4A16, speculative decoding, paged decode
    attention, and KV compression as optional later phases.

@@ -167,3 +167,6 @@ What to check:
 If one FlashAttention decode kernel dominates, move to Nsight Compute for that
 kernel. If the timeline shows many fragmented small kernels or gaps, focus on
 launch pattern and graph replay behavior instead.
+
+Current AutoDL image does not include `nsys`, so Phase 4 is closed using
+PyTorch Profiler evidence. See `phase4_profiling_summary.md`.
