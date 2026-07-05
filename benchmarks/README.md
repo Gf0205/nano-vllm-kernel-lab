@@ -238,3 +238,21 @@ latency for standalone BF16 shapes derived from the model config. It is a
 baseline and attribution step only; it does not implement W4A16, fused MLP, or
 engine integration. Prefer the `*_boundary_*` fields for percentage
 attribution because they come from one consistently timed full MLP call.
+
+After boundary attribution confirms GEMM is the target, compare torch/cuBLAS
+BF16 call variants for the same gate_up/down shapes:
+
+```bash
+python benchmarks/bench_mlp_gemm_compare.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --token-cases 128,256,512,1024 \
+  --projections gate_up,down \
+  --variants linear,matmul_t,matmul_contiguous_t \
+  --warmup-iters 20 \
+  --timing-iters 100 \
+  --no-write
+```
+
+This comparison uses `F.linear` as the correctness and timing baseline, then
+checks `torch.matmul(x, weight.t())` and a contiguous-transpose variant. It is
+still a standalone baseline step, not W4A16, fused MLP, or engine integration.
