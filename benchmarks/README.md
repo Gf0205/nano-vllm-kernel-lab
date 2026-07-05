@@ -203,3 +203,20 @@ python benchmarks/bench_attention_decode_contract.py \
   --num-blocks 16 \
   --no-write
 ```
+
+After the contract passes, measure the current FlashAttention decode baseline
+standalone before attempting a replacement:
+
+```bash
+python benchmarks/bench_attention_decode_microbench.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --cases 1x128,4x513,8x512,16x512,32x512,32x1024,64x512 \
+  --warmup-iters 20 \
+  --timing-iters 100 \
+  --no-write
+```
+
+This script uses the same paged KV-cache and GQA contract as the engine decode
+path. It checks FlashAttention output against a PyTorch reference for each case
+before reporting CUDA-event latency, average microseconds per decoded token, and
+tokens/s for the standalone decode call.
