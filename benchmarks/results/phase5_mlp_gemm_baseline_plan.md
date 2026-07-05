@@ -87,3 +87,15 @@ No-go if:
 
 If go conditions are met, the next step should still be a narrow candidate
 study, not immediate engine replacement.
+
+## 6. Baseline Closeout
+
+The first AutoDL RTX 3090 run is recorded in
+`phase5_mlp_gemm_baseline_summary.md`.
+
+The result supports continuing with a deeper standalone GEMM study:
+
+- `gate_up` becomes the dominant segment for larger token counts;
+- `down` is the second GEMM hotspot;
+- `SiluAndMul` is mostly an overhead/activation concern for small token counts;
+- no W4A16 or fused kernel implementation should start yet.

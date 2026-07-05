@@ -111,3 +111,19 @@ any custom GEMM, W4A16, or fused MLP implementation.
 
 The next concrete artifact is `bench_mlp_gemm_microbench.py` and
 `phase5_mlp_gemm_baseline_plan.md`.
+
+## 6. MLP / GEMM Baseline Decision Update
+
+The standalone Qwen3-0.6B BF16 MLP baseline supports continuing with the
+GEMM/MLP direction:
+
+- hidden size is `1024`;
+- intermediate size is `3072`;
+- `gate_up` weight shape is `(6144, 1024)`;
+- `down` weight shape is `(1024, 3072)`;
+- for token counts `128` and above, `gate_up` is consistently the largest
+  segment, about `61-63%` of full standalone MLP time;
+- `down` remains the second GEMM hotspot for larger token counts.
+
+This is a go for a deeper standalone GEMM comparison, not a go for immediate
+W4A16, fused MLP, or engine integration.
