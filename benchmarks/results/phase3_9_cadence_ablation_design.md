@@ -2,7 +2,8 @@
 
 Phase 3.9 is a minimal static-cadence ablation. It should not introduce
 adaptive scheduling yet. The static cadence knob is implemented as
-`prefill_interleave_every_n_chunks`; RTX 3090 validation is still required.
+`prefill_interleave_every_n_chunks`; the closeout result is summarized in
+`phase3_9_cadence_ablation_summary.md`.
 
 ## 1. Motivation
 
@@ -139,3 +140,6 @@ Stop after the minimal N=1/2/4 comparison if:
 
 Do not proceed to adaptive Policy C until the static cadence trade-off is
 understood.
+
+Phase 3.9 is closed. N=2 is a balanced candidate in the current workload, not a
+global default.
