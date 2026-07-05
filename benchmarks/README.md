@@ -148,3 +148,17 @@ python benchmarks/bench_model_runner_timing.py \
   --no-write \
   --output-prefix model_runner_timing_3090
 ```
+
+Then profile steady-state decode:
+
+```bash
+python benchmarks/bench_decode_profiler.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --warmup-decode-steps 4 \
+  --profile-decode-steps 16 \
+  --no-write \
+  --output-prefix decode_profiler_3090
+```

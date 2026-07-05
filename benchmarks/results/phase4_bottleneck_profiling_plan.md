@@ -79,3 +79,41 @@ python benchmarks/bench_model_runner_timing.py \
 
 This checks whether the decode outlier is in input preparation, graph replay /
 forward, logits projection, or sampler.
+
+## 6. Third Step: Steady Decode Profiler
+
+After confirming decode `forward_or_graph` dominates, profile steady-state
+decode only. Skip prefill and the first decode steps.
+
+Graph mode:
+
+```bash
+python benchmarks/bench_decode_profiler.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --warmup-decode-steps 4 \
+  --profile-decode-steps 16 \
+  --no-write \
+  --output-prefix decode_profiler_3090
+```
+
+Eager mode, with module labels for attention/MLP/RMSNorm/RoPE:
+
+```bash
+python benchmarks/bench_decode_profiler.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --num-seqs 32 \
+  --input-len 512 \
+  --output-len 128 \
+  --enforce-eager \
+  --warmup-decode-steps 4 \
+  --profile-decode-steps 16 \
+  --no-write \
+  --output-prefix decode_profiler_3090_eager
+```
+
+Use graph mode to inspect CUDA Graph replay and kernel launch pattern. Use
+eager mode to attribute time to module-level regions before choosing a kernel
+optimization target.
