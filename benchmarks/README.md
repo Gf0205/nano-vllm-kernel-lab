@@ -90,6 +90,26 @@ scheduler metrics, it reports decode batch histograms, total prefill/decode wall
 time, decode step latency, CUDA Graph decode replay counts, and a bounded
 post-injection timeline.
 
+## Final Scheduler Closeout
+
+Run the fixed robustness matrix on the AutoDL RTX 3090 after all scheduler
+policy work is frozen:
+
+```bash
+python benchmarks/bench_scheduler_closeout.py \
+  --model /root/huggingface/Qwen3-0.6B \
+  --active-decode-seqs 4,8,16 \
+  --long-input-lens 1024,3072 \
+  --repeats 5 \
+  --output-prefix final_scheduler_robustness_3090
+```
+
+This compares upstream chunked prefill with decode-aware N=1/N=2 across six
+workloads. The canonical 8-active/3072-token workload also includes N=4 to
+replace the earlier truncated cadence evidence. It writes fresh JSONL, complete
+logs, per-workload tables, and a combined matrix summary. See
+`results/final_scheduler_closeout_protocol.md` for metrics and decision rules.
+
 ## Benchmark Audit
 
 ```bash

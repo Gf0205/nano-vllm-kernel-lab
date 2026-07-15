@@ -1,9 +1,10 @@
 import argparse
 import gc
 import os
+import subprocess
 from collections import Counter
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from time import perf_counter
 
 from utils import (
@@ -30,6 +31,18 @@ from transformers import AutoTokenizer  # noqa: E402
 
 class CapacityLimitError(RuntimeError):
     pass
+
+
+def current_git_commit() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -61,6 +74,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enforce-eager", action="store_true")
     parser.add_argument("--include-decode-aware", action="store_true", help="Also run Policy A decode-aware chunked prefill.")
     parser.add_argument("--decode-aware-cadences", default="1", help="Comma-separated cadence values used with --include-decode-aware.")
+    parser.add_argument(
+        "--skip-non-chunked",
+        action="store_true",
+        help="Skip the non-chunked control when only upstream chunked and decode-aware policies are needed.",
+    )
     parser.add_argument("--no-write", action="store_true", help="Print rows only; do not write jsonl/md result files.")
     parser.add_argument("--output-prefix", default="chunked_prefill_interference")
     return parser.parse_args()
@@ -210,6 +228,7 @@ def run_case(
     long_ttft_s = 0.0
     last_active_progress_time = None
     active_decode_gaps = []
+    post_injection_active_decode_gaps = []
     active_decode_step_durations = []
     prefill_step_durations_after_inject = []
     prefill_step_durations = []
@@ -277,7 +296,12 @@ def run_case(
             active_progressed = after_active_tokens > before_active_tokens and not is_prefill
             if active_progressed:
                 if last_active_progress_time is not None:
-                    active_decode_gaps.append(now - last_active_progress_time)
+                    active_gap = now - last_active_progress_time
+                    active_decode_gaps.append(active_gap)
+                    # The closeout experiment isolates interference after the
+                    # long request arrives instead of mixing in startup gaps.
+                    if injected:
+                        post_injection_active_decode_gaps.append(active_gap)
                 last_active_progress_time = now
                 active_decode_step_durations.append(step_duration)
                 if not injected:
@@ -369,8 +393,18 @@ def run_case(
             if post_injection_wall_time > 0
             else 0.0,
             "active_decode_gap_s_avg": round(mean(active_decode_gaps), 6) if active_decode_gaps else 0.0,
+            "active_decode_gap_s_p50": round(percentile(active_decode_gaps, 0.50), 6),
             "active_decode_gap_s_p95": round(percentile(active_decode_gaps, 0.95), 6),
             "active_decode_gap_s_max": round(max(active_decode_gaps), 6) if active_decode_gaps else 0.0,
+            "post_injection_active_decode_gap_s_p50": round(
+                percentile(post_injection_active_decode_gaps, 0.50), 6
+            ),
+            "post_injection_active_decode_gap_s_p95": round(
+                percentile(post_injection_active_decode_gaps, 0.95), 6
+            ),
+            "post_injection_active_decode_gap_s_max": round(max(post_injection_active_decode_gaps), 6)
+            if post_injection_active_decode_gaps
+            else 0.0,
             "active_decode_step_s_avg": round(mean(active_decode_step_durations), 6) if active_decode_step_durations else 0.0,
             "total_prefill_wall_time_s": round(total_prefill_wall_time, 6),
             "total_decode_wall_time_s": round(total_decode_wall_time, 6),
@@ -419,6 +453,9 @@ def summarize_repeats(rows: list[dict]) -> list[dict]:
 
         gap_max = values("active_decode_gap_s_max")
         gap_p95 = values("active_decode_gap_s_p95")
+        post_gap_p50 = values("post_injection_active_decode_gap_s_p50")
+        post_gap_p95 = values("post_injection_active_decode_gap_s_p95")
+        post_gap_max = values("post_injection_active_decode_gap_s_max")
         ttft = values("long_request_ttft_s")
         post_wall = values("post_injection_wall_time_s")
         summaries.append(
@@ -428,10 +465,21 @@ def summarize_repeats(rows: list[dict]) -> list[dict]:
                 "decode_aware_prefill_interleave": case_rows[0]["decode_aware_prefill_interleave"],
                 "prefill_interleave_every_n_chunks": case_rows[0]["prefill_interleave_every_n_chunks"],
                 "active_decode_gap_s_max_mean": round(mean(gap_max), 6),
+                "active_decode_gap_s_max_median": round(median(gap_max), 6),
+                "active_decode_gap_s_max_p20": round(percentile(gap_max, 0.20), 6),
+                "active_decode_gap_s_max_p80": round(percentile(gap_max, 0.80), 6),
                 "active_decode_gap_s_max_min": round(min(gap_max), 6),
                 "active_decode_gap_s_max_max": round(max(gap_max), 6),
                 "active_decode_gap_s_p95_mean": round(mean(gap_p95), 6),
+                "post_injection_active_decode_gap_s_p50_median": round(median(post_gap_p50), 6),
+                "post_injection_active_decode_gap_s_p95_median": round(median(post_gap_p95), 6),
+                "post_injection_active_decode_gap_s_max_median": round(median(post_gap_max), 6),
+                "post_injection_active_decode_gap_s_max_p20": round(percentile(post_gap_max, 0.20), 6),
+                "post_injection_active_decode_gap_s_max_p80": round(percentile(post_gap_max, 0.80), 6),
                 "long_request_ttft_s_mean": round(mean(ttft), 6),
+                "long_request_ttft_s_median": round(median(ttft), 6),
+                "long_request_ttft_s_p20": round(percentile(ttft, 0.20), 6),
+                "long_request_ttft_s_p80": round(percentile(ttft, 0.80), 6),
                 "long_request_ttft_s_min": round(min(ttft), 6),
                 "long_request_ttft_s_max": round(max(ttft), 6),
                 "post_injection_wall_time_s_mean": round(mean(post_wall), 6),
@@ -441,6 +489,8 @@ def summarize_repeats(rows: list[dict]) -> list[dict]:
                 "num_decode_aware_interleaves_min": min(row["num_decode_aware_interleaves"] for row in case_rows),
                 "num_decode_aware_interleaves_max": max(row["num_decode_aware_interleaves"] for row in case_rows),
                 "capacity_limited_runs": sum(int(row["capacity_limited"]) for row in case_rows),
+                "long_prompt_shrunk_runs": sum(int(row["long_prompt_shrunk"]) for row in case_rows),
+                "decode_eager_steps_total": sum(int(row["decode_eager_steps"]) for row in case_rows),
             }
         )
     return summaries
@@ -463,12 +513,9 @@ def main() -> None:
     vocab_size = AutoTokenizer.from_pretrained(model, use_fast=True).vocab_size
     rows = []
     for repeat in range(args.repeats):
-        rows.extend(
-            [
-                run_case(args, "non_chunked_long_prefill", args.normal_budget, vocab_size, repeat=repeat),
-                run_case(args, "chunked_long_prefill", args.chunked_budget, vocab_size, repeat=repeat),
-            ]
-        )
+        if not args.skip_non_chunked:
+            rows.append(run_case(args, "non_chunked_long_prefill", args.normal_budget, vocab_size, repeat=repeat))
+        rows.append(run_case(args, "chunked_long_prefill", args.chunked_budget, vocab_size, repeat=repeat))
         if args.include_decode_aware:
             for cadence in cadences:
                 rows.append(
@@ -485,12 +532,17 @@ def main() -> None:
     summaries = summarize_repeats(rows)
 
     if not args.no_write:
+        # A named benchmark run is a self-contained artifact. Starting fresh
+        # prevents reruns from silently mixing records from older protocols.
+        jsonl_path.unlink(missing_ok=True)
         append_jsonl(
             jsonl_path,
             {
                 "type": "env",
                 "env": collect_env(),
+                "git_commit": current_git_commit(),
                 "effective_max_model_len": effective_max_model_len,
+                "benchmark_args": vars(args),
             },
         )
 
@@ -522,8 +574,12 @@ def main() -> None:
                 "wall_time_s",
                 "output_tokens_per_s",
                 "active_decode_gap_s_avg",
+                "active_decode_gap_s_p50",
                 "active_decode_gap_s_p95",
                 "active_decode_gap_s_max",
+                "post_injection_active_decode_gap_s_p50",
+                "post_injection_active_decode_gap_s_p95",
+                "post_injection_active_decode_gap_s_max",
                 "long_request_ttft_s",
                 "post_inject_prefill_step_s_max",
                 "num_prefill_steps",
@@ -543,10 +599,21 @@ def main() -> None:
                 "decode_aware_prefill_interleave",
                 "prefill_interleave_every_n_chunks",
                 "active_decode_gap_s_max_mean",
+                "active_decode_gap_s_max_median",
+                "active_decode_gap_s_max_p20",
+                "active_decode_gap_s_max_p80",
                 "active_decode_gap_s_max_min",
                 "active_decode_gap_s_max_max",
                 "active_decode_gap_s_p95_mean",
+                "post_injection_active_decode_gap_s_p50_median",
+                "post_injection_active_decode_gap_s_p95_median",
+                "post_injection_active_decode_gap_s_max_median",
+                "post_injection_active_decode_gap_s_max_p20",
+                "post_injection_active_decode_gap_s_max_p80",
                 "long_request_ttft_s_mean",
+                "long_request_ttft_s_median",
+                "long_request_ttft_s_p20",
+                "long_request_ttft_s_p80",
                 "long_request_ttft_s_min",
                 "long_request_ttft_s_max",
                 "post_injection_wall_time_s_mean",
@@ -556,6 +623,8 @@ def main() -> None:
                 "num_decode_aware_interleaves_min",
                 "num_decode_aware_interleaves_max",
                 "capacity_limited_runs",
+                "long_prompt_shrunk_runs",
+                "decode_eager_steps_total",
             ],
         )
         print(f"Wrote {jsonl_path}")
